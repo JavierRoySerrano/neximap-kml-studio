@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<!-- NexiMap KML Studio v1.5 - Light theme, multi-map, vertex editing fix, GeoJSON import -->
+<!-- NexiMap KML Studio v1.6 - Map selector toggle/drag, pin GPS+desc, folder drag nesting, ruler, distance+slack, ctx overflow fix, pin types -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NexiMap KML Studio v1.5</title>
+<title>NexiMap KML Studio v1.6</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='2' width='28' height='28' rx='4' fill='%230096D6'/%3E%3Cpath d='M8 12L16 8L24 12L16 16Z' fill='white' opacity='0.9'/%3E%3Cpath d='M8 16L16 20L24 16' stroke='white' stroke-width='1.5' fill='none'/%3E%3Cpath d='M8 20L16 24L24 20' stroke='white' stroke-width='1.5' fill='none'/%3E%3C/svg%3E"/>
 <style>
 :root {
@@ -97,7 +97,6 @@ header {
     min-width: 200px;
     padding: 4px 0;
     z-index: 9999;
-    z-index: 1000;
 }
 .menu-dropdown.show { display: block; }
 
@@ -279,7 +278,7 @@ header {
 #mapContainer { flex: 1; position: relative; z-index: 0; isolation: isolate; }
 #map { width: 100%; height: 100%; }
 
-/* Map layer selector */
+/* Map layer selector - draggable */
 #mapLayerSelector {
     position: absolute;
     top: 10px;
@@ -289,8 +288,21 @@ header {
     border: 1px solid var(--border);
     border-radius: 6px;
     box-shadow: var(--shadow);
-    padding: 6px;
+    padding: 0;
+    transition: box-shadow 0.2s;
 }
+#mapLayerSelector.dragging { box-shadow: var(--shadow-lg); }
+#mapLayerSelector.hidden { display: none; }
+
+.map-layer-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 5px 8px; border-bottom: 1px solid var(--border); cursor: move;
+    background: #fafafa; border-radius: 6px 6px 0 0; user-select: none;
+}
+.map-layer-header span { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); }
+.map-layer-close { background: none; border: none; cursor: pointer; color: var(--text-muted); font-size: 14px; padding: 0 2px; line-height: 1; }
+.map-layer-close:hover { color: var(--danger); }
+.map-layer-body { padding: 4px; }
 
 .map-layer-btn {
     display: block;
@@ -390,8 +402,9 @@ header {
 .ctx-menu {
     position: fixed; background: white;
     border: 1px solid var(--border); border-radius: 6px;
-    padding: 4px 0; min-width: 180px;
+    padding: 4px 0; min-width: 200px;
     box-shadow: var(--shadow-lg); z-index: 7000; display: none;
+    max-height: calc(100vh - 20px); overflow-y: auto;
 }
 .ctx-menu.show { display: block; }
 
@@ -532,6 +545,86 @@ header {
     user-select: none;
 }
 .filter-toggle input { accent-color: var(--accent); margin: 0; cursor: pointer; }
+
+/* Folder checkbox */
+.tree-folder-check {
+    width: 14px; height: 14px; margin: 0 2px 0 0;
+    accent-color: var(--accent); cursor: pointer; flex-shrink: 0;
+}
+
+/* Pin type selector window */
+#pinTypeWindow {
+    position: fixed; background: white; border: 1px solid var(--border);
+    border-radius: 8px; box-shadow: var(--shadow-lg); z-index: 8000;
+    display: none; width: 280px;
+}
+#pinTypeWindow.show { display: block; }
+.pin-type-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 12px; border-bottom: 1px solid var(--border);
+    cursor: move; user-select: none; background: #fafafa; border-radius: 8px 8px 0 0;
+}
+.pin-type-header h5 { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); margin:0; }
+.pin-type-close { background: none; border: none; cursor: pointer; color: var(--text-muted); font-size: 14px; padding: 0; }
+.pin-type-close:hover { color: var(--danger); }
+.pin-type-grid {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px;
+    padding: 10px; max-height: 300px; overflow-y: auto;
+}
+.pin-type-option {
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    padding: 8px 4px; border: 2px solid transparent; border-radius: 6px;
+    cursor: pointer; transition: all 0.15s; background: #fafafa;
+}
+.pin-type-option:hover { background: var(--accent-light); border-color: var(--accent); }
+.pin-type-option.active { border-color: var(--accent); background: var(--bg-selected); }
+.pin-type-option svg { width: 24px; height: 32px; }
+.pin-type-option span { font-size: 9px; color: var(--text-muted); text-align: center; line-height: 1.2; }
+
+/* Distance panel on map */
+#distancePanel {
+    position: absolute; bottom: 20px; left: 50%;
+    transform: translateX(-50%); z-index: 600;
+    background: white; border: 1px solid var(--border);
+    border-radius: 8px; box-shadow: var(--shadow-lg);
+    padding: 10px 16px; display: none; min-width: 320px; font-size: 12px;
+}
+#distancePanel.show { display: block; }
+#distancePanel h5 { font-size: 10px; font-weight: 600; text-transform: uppercase; color: var(--text-muted); margin-bottom: 6px; }
+.dist-row { display: flex; justify-content: space-between; margin-bottom: 3px; }
+.dist-row .dist-label { color: var(--text-secondary); }
+.dist-row .dist-value { font-weight: 600; color: var(--text); font-family: monospace; }
+.dist-row .dist-value.green { color: var(--success); }
+.dist-row .dist-value.blue { color: var(--accent); }
+#distancePanel .dist-close { position: absolute; top: 6px; right: 8px; background: none; border: none; cursor: pointer; color: var(--text-muted); font-size: 14px; }
+#distancePanel .dist-close:hover { color: var(--danger); }
+
+/* Measurement A/B end markers */
+.measure-marker-a {
+    width: 14px; height: 14px; background: var(--success); border: 2px solid white;
+    border-radius: 50%; box-shadow: 0 1px 4px rgba(0,0,0,0.4); z-index: 900 !important;
+}
+.measure-marker-b {
+    width: 14px; height: 14px; background: var(--danger); border: 2px solid white;
+    border-radius: 50%; box-shadow: 0 1px 4px rgba(0,0,0,0.4); z-index: 900 !important;
+}
+
+/* Settings dialog overlay */
+.settings-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.3); z-index: 9998;
+    display: none; align-items: center; justify-content: center;
+}
+.settings-overlay.show { display: flex; }
+.settings-dialog {
+    background: white; border-radius: 10px; box-shadow: var(--shadow-lg);
+    padding: 20px; min-width: 320px; max-width: 400px;
+}
+.settings-dialog h4 { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 12px; }
+.settings-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.settings-row label { font-size: 12px; color: var(--text-secondary); width: 120px; }
+.settings-row input { flex: 1; padding: 5px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 12px; font-family: var(--font); }
+.settings-row input:focus { border-color: var(--accent); outline: none; }
+.settings-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
 </style>
 </head>
 <body>
@@ -541,7 +634,7 @@ header {
     <div class="app-logo">
         <svg width="20" height="20" viewBox="0 0 32 32"><rect x="2" y="2" width="28" height="28" rx="4" fill="#0096D6"/><path d="M8 12L16 8L24 12L16 16Z" fill="white" opacity="0.9"/><path d="M8 16L16 20L24 16" stroke="white" stroke-width="1.5" fill="none"/><path d="M8 20L16 24L24 20" stroke="white" stroke-width="1.5" fill="none"/></svg>
         NexiMap KML Studio
-        <span class="ver">v1.5</span>
+        <span class="ver">v1.6</span>
     </div>
 
     <!-- File Menu -->
@@ -568,6 +661,12 @@ header {
     <button class="tool-btn" id="btnPlacePin" onclick="togglePinMode()" title="Place a pin marker on the map">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
     </button>
+    <button class="tool-btn" id="btnPinTypes" onclick="togglePinTypeWindow()" title="Choose pin icon type">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+    </button>
+    <button class="tool-btn" id="btnMeasurePath" onclick="toggleMeasureMode()" title="Measure A-End to B-End distance on a line">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12h20"/><path d="M6 8v8"/><path d="M18 8v8"/><path d="M10 10v4"/><path d="M14 10v4"/></svg>
+    </button>
 
     <div class="tool-sep"></div>
 
@@ -576,6 +675,9 @@ header {
     </button>
     <button class="tool-btn" onclick="promptLineWidth()" title="Set line width">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="6" x2="20" y2="6" stroke-width="1"/><line x1="4" y1="12" x2="20" y2="12" stroke-width="3"/><line x1="4" y1="18" x2="20" y2="18" stroke-width="5"/></svg>
+    </button>
+    <button class="tool-btn" id="btnToggleMapLayers" onclick="toggleMapLayerSelector()" title="Toggle map type selector">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
     </button>
 
     <div class="spacer"></div>
@@ -620,6 +722,11 @@ header {
         <div id="map"></div>
         <div id="editBanner">✏️ EDIT MODE — Drag vertices to reposition • Right-click vertex to delete</div>
         <div id="mapLayerSelector">
+            <div class="map-layer-header" id="mapLayerDragHandle">
+                <span>Map Type</span>
+                <button class="map-layer-close" onclick="toggleMapLayerSelector()">&#10005;</button>
+            </div>
+            <div class="map-layer-body">
             <button class="map-layer-btn active" data-layer="osm" onclick="switchMapLayer('osm')">🗺️ Street Map</button>
             <button class="map-layer-btn" data-layer="osm-hot" onclick="switchMapLayer('osm-hot')">🏙️ Humanitarian</button>
             <button class="map-layer-btn" data-layer="carto-voyager" onclick="switchMapLayer('carto-voyager')">🏷️ Labels + Detail</button>
@@ -628,6 +735,7 @@ header {
             <button class="map-layer-btn" data-layer="satellite" onclick="switchMapLayer('satellite')">🛰️ Satellite</button>
             <button class="map-layer-btn" data-layer="sat-labels" onclick="switchMapLayer('sat-labels')">🛰️ Satellite + Labels</button>
             <button class="map-layer-btn" data-layer="topo" onclick="switchMapLayer('topo')">⛰️ Topographic</button>
+            </div>
         </div>
         <div id="emptyState">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -639,6 +747,11 @@ header {
             <img id="logoImage" src="" alt="Logo">
             <div class="logo-remove" onclick="removeLogo()">✕</div>
             <div class="logo-resize" id="logoResizeHandle"></div>
+        </div>
+        <div id="distancePanel">
+            <button class="dist-close" onclick="closeDistancePanel()">&#10005;</button>
+            <h5>Distance Measurement</h5>
+            <div id="distanceContent"></div>
         </div>
     </div>
 
@@ -664,6 +777,38 @@ header {
                     <span id="propType" style="font-size:11px;color:var(--text-muted);">—</span>
                 </div>
             </div>
+            </div>
+            <!-- Pin GPS + Description (Enhancement 2) -->
+            <div class="prop-section" id="propPinInfo" style="display:none;">
+                <h4>Pin Location</h4>
+                <div class="prop-row">
+                    <span class="prop-label">Latitude</span>
+                    <span id="propPinLat" style="font-size:11px;color:var(--text);font-family:monospace;">—</span>
+                </div>
+                <div class="prop-row">
+                    <span class="prop-label">Longitude</span>
+                    <span id="propPinLng" style="font-size:11px;color:var(--text);font-family:monospace;">—</span>
+                </div>
+                <div class="prop-row" style="align-items:flex-start;">
+                    <span class="prop-label">Note</span>
+                    <textarea class="prop-input" id="propPinDesc" rows="3" style="resize:vertical;min-height:40px;" onchange="updatePinDescription(this.value)" placeholder="Add a description..."></textarea>
+                </div>
+            </div>
+            <!-- Distance info for lines (Enhancement 4/5) -->
+            <div class="prop-section" id="propDistance" style="display:none;">
+                <h4>Distance</h4>
+                <div class="prop-row">
+                    <span class="prop-label">Geometric</span>
+                    <span id="propDistGeo" style="font-size:11px;color:var(--text);font-family:monospace;">—</span>
+                </div>
+                <div class="prop-row">
+                    <span class="prop-label">Estimated</span>
+                    <span id="propDistEst" style="font-size:11px;color:var(--accent);font-family:monospace;">—</span>
+                </div>
+                <div class="prop-row">
+                    <span class="prop-label">Slack</span>
+                    <span id="propSlackPct" style="font-size:11px;color:var(--text-muted);">—</span>
+                </div>
             <div class="prop-section" id="propStyle" style="display:none;">
                 <h4>Style</h4>
                 <div class="prop-row">
@@ -723,6 +868,11 @@ header {
     <div class="ctx-sep" data-for="layer"></div>
     <div class="ctx-item" data-for="layer" onclick="ctxDuplicate()">📋 Duplicate</div>
     <div class="ctx-item" data-for="layer" onclick="ctxMoveToFolder()">📁 Move to folder…</div>
+    <div class="ctx-sep" data-for="both"></div>
+    <div class="ctx-item" data-for="both" onclick="ctxCalcDistance()">📐 Calculate Distance</div>
+    <div class="ctx-item" data-for="layer" onclick="ctxMeasureAB()">🟢🔴 Measure A-End → B-End</div>
+    <div class="ctx-sep" data-for="folder"></div>
+    <div class="ctx-item" data-for="folder" onclick="ctxExportFolderKML()">💾 Export Checked as KML</div>
     <div class="ctx-sep" data-for="both"></div>
     <div class="ctx-item danger" data-for="both" onclick="ctxDelete()">🗑️ Delete</div>
 </div>
@@ -793,6 +943,9 @@ header {
         🔎 Zoom to Selected
     </button>
     <div class="menu-sep"></div>
+    <button class="menu-dropdown-item" onclick="toggleMapLayerSelector(); closeMenus();">
+        🗺️ Toggle Map Type Selector
+    </button>
     <button class="menu-dropdown-item" onclick="loadLogoImage(); closeMenus();">
         🖼️ Add Logo Overlay…
     </button>
@@ -806,6 +959,10 @@ header {
     </button>
     <button class="menu-dropdown-item" onclick="showProjectStats(); closeMenus();">
         📊 Project Statistics
+    </button>
+    <div class="menu-sep"></div>
+    <button class="menu-dropdown-item" onclick="openSlackSettings(); closeMenus();">
+        ⚙️ Fiber Slack Settings…
     </button>
 </div>
 
@@ -821,6 +978,31 @@ header {
     <div class="color-palette-custom">
         <input type="color" id="customColorPicker" value="#3b82f6">
         <span>Custom</span>
+    </div>
+</div>
+
+<!-- Pin type selector window -->
+<div id="pinTypeWindow">
+    <div class="pin-type-header" id="pinTypeDragHandle">
+        <h5 style="margin:0;">📌 Pin Types</h5>
+        <button class="pin-type-close" onclick="togglePinTypeWindow()">✕</button>
+    </div>
+    <div class="pin-type-grid" id="pinTypeGrid"></div>
+</div>
+
+<!-- Settings overlay -->
+<div class="settings-overlay" id="settingsOverlay">
+    <div class="settings-dialog">
+        <h4>⚙️ Fiber Slack Settings</h4>
+        <div class="settings-row">
+            <label>Slack %</label>
+            <input type="number" id="settingsSlackPct" min="0" max="200" step="0.5" value="10">
+        </div>
+        <p style="font-size:10px;color:var(--text-muted);margin-bottom:8px;">Estimated distance = Geometric distance × (1 + slack%/100). Typical fiber slack: 5-15%.</p>
+        <div class="settings-actions">
+            <button class="prop-btn" onclick="closeSlackSettings()">Cancel</button>
+            <button class="prop-btn primary" onclick="saveSlackSettings()">Save</button>
+        </div>
     </div>
 </div>
 
@@ -1374,7 +1556,7 @@ function renderMapLayers() {
             }).addTo(map);
             layer.leafletLayer.on('click', (e) => { L.DomEvent.stopPropagation(e); selectLayer(layer.id); });
         } else if (layer.type === 'point' && layer.coords.length > 0) {
-            const pinSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="36" viewBox="0 0 24 36"><path d="M12 0C5.4 0 0 5.4 0 12c0 9 12 24 12 24s12-15 12-24C24 5.4 18.6 0 12 0z" fill="${layer.color}"/><circle cx="12" cy="12" r="5" fill="white" opacity="0.9"/></svg>`;
+            const pinSvg = getPinSvg(layer.pinType || 'default', layer.color);
             const icon = L.divIcon({
                 className: 'pin-marker',
                 html: pinSvg,
@@ -1453,41 +1635,58 @@ function createFolderEl(folder) {
     const div = document.createElement('div');
     div.className = 'tree-folder';
     div.dataset.folderId = folder.id;
+    div.draggable = true;
 
     const header = document.createElement('div');
     header.className = 'tree-folder-header';
     const count = countItems(folder);
+    const isChecked = folder.checked !== false;
     header.innerHTML = `
+        <input type="checkbox" class="tree-folder-check" ${isChecked ? 'checked' : ''} data-folder-id="${folder.id}">
         <span class="tree-toggle ${folder.expanded ? '' : 'collapsed'}">▼</span>
         <span class="folder-icon">${folder.expanded ? '📂' : '📁'}</span>
         <span class="tree-folder-name">${esc(folder.name)}</span>
         <span class="tree-folder-count">${count}</span>
     `;
 
-    header.addEventListener('click', () => { folder.expanded = !folder.expanded; renderFolderTree(); });
-
-    header.addEventListener('dblclick', (e) => {
+    const checkbox = header.querySelector('.tree-folder-check');
+    checkbox.addEventListener('click', (e) => {
         e.stopPropagation();
-        // Zoom to all layers in this folder
-        zoomToFolder(folder);
+        folder.checked = checkbox.checked;
+        function cascadeCheck(fId, val) {
+            const f = projectData.folders.find(ff => ff.id === fId);
+            if (f) f.checked = val;
+            projectData.folders.filter(ff => ff.parentId === fId).forEach(sf => cascadeCheck(sf.id, val));
+        }
+        cascadeCheck(folder.id, checkbox.checked);
+        renderFolderTree();
     });
 
-    // Right-click folder for color/width
+    header.addEventListener('click', (e) => {
+        if (e.target.classList.contains('tree-folder-check')) return;
+        folder.expanded = !folder.expanded; renderFolderTree();
+    });
+
+    header.addEventListener('dblclick', (e) => { e.stopPropagation(); zoomToFolder(folder); });
+
     header.addEventListener('contextmenu', (e) => {
-        e.preventDefault();
-        ctxTargetId = null;
-        ctxTargetFolderId = folder.id;
+        e.preventDefault(); ctxTargetId = null; ctxTargetFolderId = folder.id;
         showCtxMenu(e.clientX, e.clientY, true);
     });
 
-    // Folder drag-and-drop target
     header.addEventListener('dragover', (e) => { e.preventDefault(); header.classList.add('drag-over'); });
     header.addEventListener('dragleave', () => { header.classList.remove('drag-over'); });
     header.addEventListener('drop', (e) => {
-        e.preventDefault();
-        header.classList.remove('drag-over');
-        const layerId = e.dataTransfer.getData('text/plain');
-        if (layerId) moveLayerToFolder(layerId, folder.id);
+        e.preventDefault(); e.stopPropagation(); header.classList.remove('drag-over');
+        const data = e.dataTransfer.getData('text/plain');
+        if (data.startsWith('FOLDER:')) { moveFolderIntoFolder(data.replace('FOLDER:', ''), folder.id); }
+        else if (data) { moveLayerToFolder(data, folder.id); }
+    });
+
+    div.addEventListener('dragstart', (e) => {
+        if (e.target !== div) return;
+        e.dataTransfer.setData('text/plain', 'FOLDER:' + folder.id);
+        e.dataTransfer.effectAllowed = 'move'; e.stopPropagation();
     });
 
     div.appendChild(header);
@@ -1604,10 +1803,29 @@ function updatePropsPanel() {
     if (!layer) {
         show('propNone', true); show('propName', false); show('propStyle', false);
         show('propSimplify', false); show('propActions', false);
+        show('propPinInfo', false); show('propDistance', false);
         return;
     }
     show('propNone', false); show('propName', true); show('propStyle', true);
     show('propSimplify', layer.type === 'line'); show('propActions', true);
+
+    // Pin info (Enhancement 2)
+    show('propPinInfo', layer.type === 'point');
+    if (layer.type === 'point' && layer.coords.length > 0) {
+        document.getElementById('propPinLat').textContent = layer.coords[0][0].toFixed(6);
+        document.getElementById('propPinLng').textContent = layer.coords[0][1].toFixed(6);
+        document.getElementById('propPinDesc').value = layer.description || '';
+    }
+
+    // Distance info (Enhancement 4/5)
+    show('propDistance', layer.type === 'line');
+    if (layer.type === 'line' && layer.coords.length >= 2) {
+        const geo = calcLineDistance(layer.coords);
+        const est = geo * (1 + fiberSlackPct / 100);
+        document.getElementById('propDistGeo').textContent = formatDistance(geo);
+        document.getElementById('propDistEst').textContent = formatDistance(est);
+        document.getElementById('propSlackPct').textContent = fiberSlackPct + '%';
+    }
 
     document.getElementById('propNameInput').value = layer.name;
     document.getElementById('propPointCount').textContent = layer.coords.length + (layer.type === 'line' ? ' vertices' : ' (pin)');
@@ -1790,7 +2008,41 @@ function finishDraw() {
 }
 
 map.on('click', (e) => {
-    // Pin mode
+    // Measure mode (Enhancement 5)
+    if (measureMode) {
+        const l = projectData.layers[selectedLayerId];
+        if (!l || l.type !== 'line') { toast('Select a line first', 'error'); return; }
+        const idx = findNearestVertexIdx(e.latlng, l.coords);
+        measureClicks.push(idx);
+        if (measureClicks.length === 1) {
+            // A-End (green)
+            const icon = L.divIcon({ className: 'measure-marker-a', iconSize: [14,14], iconAnchor: [7,7] });
+            const m = L.marker(l.coords[idx], { icon, zIndexOffset: 3000 }).addTo(map);
+            measureMarkers.push(m);
+            toast('A-End set at vertex ' + (idx+1) + ' — now click B-End', 'info');
+        } else if (measureClicks.length === 2) {
+            // B-End (red)
+            const icon = L.divIcon({ className: 'measure-marker-b', iconSize: [14,14], iconAnchor: [7,7] });
+            const m = L.marker(l.coords[idx], { icon, zIndexOffset: 3000 }).addTo(map);
+            measureMarkers.push(m);
+            // Calculate and display
+            const aIdx = measureClicks[0], bIdx = measureClicks[1];
+            const geo = calcPathDistance(l.coords, aIdx, bIdx);
+            const est = geo * (1 + fiberSlackPct / 100);
+            // Draw highlight line between points
+            const startI = Math.min(aIdx, bIdx), endI = Math.max(aIdx, bIdx);
+            const segCoords = l.coords.slice(startI, endI + 1);
+            measureLineLayer = L.polyline(segCoords, { color: '#f59e0b', weight: 5, opacity: 0.7, dashArray: '10,6' }).addTo(map);
+            showDistancePanel({ title: 'A-End to B-End', geo, est, slack: fiberSlackPct, aEnd: aIdx, bEnd: bIdx });
+            // Reset measure mode
+            measureMode = false;
+            document.getElementById('btnMeasurePath').classList.remove('active');
+            if (!editMode) document.getElementById('editBanner').classList.remove('show');
+            measureClicks = [];
+        }
+        return;
+    }
+    // Pin mode (uses selected pin type - Enhancement 7)
     if (pinMode) {
         const name = prompt('Pin name:', 'Location') || 'Location';
         const id = genId();
@@ -1798,9 +2050,10 @@ map.on('click', (e) => {
         let folderId;
         const existing = projectData.folders.filter(f => !f.parentId);
         if (existing.length > 0) { folderId = existing[0].id; }
-        else { folderId = genFolderId(); projectData.folders.push({ id: folderId, name: 'Markers', expanded: true, items: [] }); }
+        else { folderId = genFolderId(); projectData.folders.push({ id: folderId, name: 'Markers', expanded: true, items: [], checked: true }); }
         projectData.layers[id] = { id, name, type: 'point', coords, originalCoords: JSON.parse(JSON.stringify(coords)),
-            color: '#ef4444', width: 3, opacity: 1, visible: true, folderId, leafletLayer: null, vertexMarkers: [] };
+            color: '#ef4444', width: 3, opacity: 1, visible: true, folderId, leafletLayer: null, vertexMarkers: [],
+            pinType: selectedPinType, description: '' };
         const folder = projectData.folders.find(f => f.id === folderId);
         if (folder) folder.items.push(id);
         selectLayer(id); renderAll(); updateStatus();
@@ -1812,12 +2065,10 @@ map.on('click', (e) => {
     // Draw mode
     if (drawMode) {
         drawCoords.push([e.latlng.lat, e.latlng.lng]);
-        // Update preview line
         if (drawPreviewLayer) map.removeLayer(drawPreviewLayer);
         if (drawCoords.length >= 2) {
             drawPreviewLayer = L.polyline(drawCoords, { color: '#ff6600', weight: 3, dashArray: '8,6' }).addTo(map);
         }
-        // Show dot at click point
         L.circleMarker(e.latlng, { radius: 4, color: '#ff6600', fillColor: '#fff', fillOpacity: 1, weight: 2 }).addTo(map);
         return;
     }
@@ -1849,7 +2100,7 @@ function distToSeg(p, a, b) {
 
 // === FOLDER OPS ===
 window.createNewFolder = function() {
-    projectData.folders.push({ id: genFolderId(), name: 'New Folder', expanded: true, items: [] });
+    projectData.folders.push({ id: genFolderId(), name: 'New Folder', expanded: true, items: [], checked: true });
     renderFolderTree(); toast('Created folder', 'info');
 };
 
@@ -1872,8 +2123,16 @@ function showCtxMenu(x, y, isFolder) {
         const forType = el.dataset.for;
         el.style.display = (forType === 'both' || forType === (isFolder ? 'folder' : 'layer')) ? '' : 'none';
     });
+    // Position then clamp to viewport (Enhancement 6)
     m.style.left = x + 'px'; m.style.top = y + 'px';
     m.classList.add('show');
+    // After render, adjust if overflowing
+    requestAnimationFrame(() => {
+        const rect = m.getBoundingClientRect();
+        const vw = window.innerWidth, vh = window.innerHeight;
+        if (rect.bottom > vh - 10) m.style.top = Math.max(10, vh - rect.height - 10) + 'px';
+        if (rect.right > vw - 10) m.style.left = Math.max(10, vw - rect.width - 10) + 'px';
+    });
 }
 
 document.addEventListener('click', () => { document.getElementById('ctxMenu').classList.remove('show'); closeMenus(); });
@@ -2450,11 +2709,14 @@ document.addEventListener('keydown', (e) => {
     if (e.ctrlKey && e.key === 's') { e.preventDefault(); saveKML(); }
     if (e.key === 'Delete' && selectedLayerId) { deleteSelected(); }
     if (e.key === 'Escape') {
-        if (pinMode) { pinMode = false; document.getElementById('btnPlacePin').classList.remove('active'); document.getElementById('editBanner').classList.remove('show'); toast('Pin mode cancelled', 'info'); }
+        if (measureMode) { measureMode = false; clearMeasureMarkers(); document.getElementById('btnMeasurePath').classList.remove('active'); if (!editMode) document.getElementById('editBanner').classList.remove('show'); toast('Measure cancelled', 'info'); }
+        else if (pinMode) { pinMode = false; document.getElementById('btnPlacePin').classList.remove('active'); document.getElementById('editBanner').classList.remove('show'); toast('Pin mode cancelled', 'info'); }
         else if (drawMode) { drawCoords = []; if (drawPreviewLayer) { map.removeLayer(drawPreviewLayer); drawPreviewLayer = null; } drawMode = false; document.getElementById('btnDrawLine').classList.remove('active'); document.getElementById('editBanner').classList.remove('show'); toast('Draw cancelled', 'info'); }
         else if (editMode) toggleEditMode();
         if (addPointMode) toggleAddPointMode();
         document.getElementById('colorPalette').classList.remove('show');
+        document.getElementById('pinTypeWindow').classList.remove('show');
+        closeDistancePanel();
     }
     if (e.key === 'Enter' && drawMode) { finishDraw(); }
 });
@@ -2501,6 +2763,335 @@ leftResize.addEventListener('mousedown', () => {
 
 updateStatus();
 
+
+// === SETTINGS (fiber slack) ===
+let fiberSlackPct = 10;
+
+window.openSlackSettings = function() {
+    document.getElementById('settingsSlackPct').value = fiberSlackPct;
+    document.getElementById('settingsOverlay').classList.add('show');
+};
+window.closeSlackSettings = function() {
+    document.getElementById('settingsOverlay').classList.remove('show');
+};
+window.saveSlackSettings = function() {
+    fiberSlackPct = parseFloat(document.getElementById('settingsSlackPct').value) || 0;
+    document.getElementById('settingsOverlay').classList.remove('show');
+    toast('Slack set to ' + fiberSlackPct + '%', 'success');
+    updatePropsPanel();
+};
+
+// === PIN TYPES (Enhancement 7) ===
+const PIN_TYPES = [
+    { id: 'default', name: 'Default', svg: (c) => '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="36" viewBox="0 0 24 36"><path d="M12 0C5.4 0 0 5.4 0 12c0 9 12 24 12 24s12-15 12-24C24 5.4 18.6 0 12 0z" fill="'+c+'"/><circle cx="12" cy="12" r="5" fill="white" opacity="0.9"/></svg>' },
+    { id: 'square', name: 'Square', svg: (c) => '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="36" viewBox="0 0 24 36"><rect x="2" y="2" width="20" height="20" rx="3" fill="'+c+'"/><polygon points="12,36 8,22 16,22" fill="'+c+'"/><rect x="7" y="7" width="10" height="10" rx="1" fill="white" opacity="0.9"/></svg>' },
+    { id: 'diamond', name: 'Diamond', svg: (c) => '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="36" viewBox="0 0 24 36"><polygon points="12,0 24,12 12,24 0,12" fill="'+c+'"/><polygon points="12,30 9,24 15,24" fill="'+c+'"/><circle cx="12" cy="12" r="4" fill="white" opacity="0.9"/></svg>' },
+    { id: 'star', name: 'Star', svg: (c) => '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="36" viewBox="0 0 24 36"><polygon points="12,0 15,8 24,9 17,15 19,24 12,19 5,24 7,15 0,9 9,8" fill="'+c+'"/><polygon points="12,36 9,24 15,24" fill="'+c+'"/><circle cx="12" cy="12" r="3" fill="white" opacity="0.9"/></svg>' },
+    { id: 'triangle', name: 'Triangle', svg: (c) => '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="36" viewBox="0 0 24 36"><polygon points="12,0 24,20 0,20" fill="'+c+'"/><polygon points="12,36 9,20 15,20" fill="'+c+'"/><circle cx="12" cy="11" r="3" fill="white" opacity="0.9"/></svg>' },
+    { id: 'flag', name: 'Flag', svg: (c) => '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="36" viewBox="0 0 24 36"><rect x="3" y="0" width="2" height="36" fill="'+c+'"/><polygon points="5,0 24,0 20,8 24,16 5,16" fill="'+c+'"/><rect x="8" y="4" width="10" height="8" rx="1" fill="white" opacity="0.6"/></svg>' },
+    { id: 'circle', name: 'Circle', svg: (c) => '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="36" viewBox="0 0 24 36"><circle cx="12" cy="12" r="12" fill="'+c+'"/><polygon points="12,36 8,22 16,22" fill="'+c+'"/><circle cx="12" cy="12" r="5" fill="white" opacity="0.9"/></svg>' },
+    { id: 'house', name: 'Building', svg: (c) => '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="36" viewBox="0 0 24 36"><polygon points="12,0 24,10 24,22 0,22 0,10" fill="'+c+'"/><polygon points="12,36 9,22 15,22" fill="'+c+'"/><rect x="9" y="12" width="6" height="10" fill="white" opacity="0.9"/></svg>' },
+    { id: 'tower', name: 'Tower', svg: (c) => '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="36" viewBox="0 0 24 36"><rect x="8" y="4" width="8" height="20" rx="1" fill="'+c+'"/><polygon points="12,0 8,4 16,4" fill="'+c+'"/><polygon points="12,36 8,24 16,24" fill="'+c+'"/><circle cx="12" cy="10" r="2.5" fill="white" opacity="0.9"/><rect x="10" y="15" width="4" height="4" rx="0.5" fill="white" opacity="0.7"/></svg>' },
+    { id: 'server', name: 'Data Center', svg: (c) => '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="36" viewBox="0 0 24 36"><rect x="2" y="2" width="20" height="22" rx="2" fill="'+c+'"/><polygon points="12,36 8,24 16,24" fill="'+c+'"/><rect x="5" y="5" width="14" height="4" rx="1" fill="white" opacity="0.8"/><rect x="5" y="11" width="14" height="4" rx="1" fill="white" opacity="0.8"/><rect x="5" y="17" width="14" height="4" rx="1" fill="white" opacity="0.8"/><circle cx="16" cy="7" r="1" fill="'+c+'"/><circle cx="16" cy="13" r="1" fill="'+c+'"/><circle cx="16" cy="19" r="1" fill="'+c+'"/></svg>' },
+    { id: 'splice', name: 'Splice', svg: (c) => '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="36" viewBox="0 0 24 36"><ellipse cx="12" cy="12" rx="10" ry="7" fill="'+c+'"/><polygon points="12,36 9,19 15,19" fill="'+c+'"/><line x1="5" y1="12" x2="19" y2="12" stroke="white" stroke-width="2"/><circle cx="10" cy="12" r="1.5" fill="white"/><circle cx="14" cy="12" r="1.5" fill="white"/></svg>' },
+    { id: 'manhole', name: 'Manhole', svg: (c) => '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="36" viewBox="0 0 24 36"><rect x="2" y="4" width="20" height="18" rx="9" fill="'+c+'"/><polygon points="12,36 9,22 15,22" fill="'+c+'"/><ellipse cx="12" cy="13" rx="6" ry="5" fill="none" stroke="white" stroke-width="1.5"/><line x1="6" y1="13" x2="18" y2="13" stroke="white" stroke-width="1.5"/><line x1="12" y1="8" x2="12" y2="18" stroke="white" stroke-width="1.5"/></svg>' },
+];
+
+let selectedPinType = 'default';
+
+function renderPinTypeGrid() {
+    const grid = document.getElementById('pinTypeGrid');
+    grid.innerHTML = '';
+    PIN_TYPES.forEach(pt => {
+        const opt = document.createElement('div');
+        opt.className = 'pin-type-option' + (pt.id === selectedPinType ? ' active' : '');
+        opt.innerHTML = pt.svg('#0096D6') + '<span>' + pt.name + '</span>';
+        opt.addEventListener('click', () => {
+            selectedPinType = pt.id;
+            document.querySelectorAll('.pin-type-option').forEach(o => o.classList.remove('active'));
+            opt.classList.add('active');
+            toast('Pin type: ' + pt.name, 'info');
+        });
+        grid.appendChild(opt);
+    });
+}
+
+function getPinSvg(pinTypeId, color) {
+    const pt = PIN_TYPES.find(p => p.id === pinTypeId) || PIN_TYPES[0];
+    return pt.svg(color);
+}
+
+window.togglePinTypeWindow = function() {
+    const w = document.getElementById('pinTypeWindow');
+    if (w.classList.contains('show')) { w.classList.remove('show'); return; }
+    renderPinTypeGrid();
+    const btn = document.getElementById('btnPinTypes');
+    const r = btn.getBoundingClientRect();
+    w.style.left = r.left + 'px';
+    w.style.top = (r.bottom + 4) + 'px';
+    w.classList.add('show');
+};
+
+// Make pin type window draggable
+(function() {
+    const el = document.getElementById('pinTypeWindow');
+    const handle = document.getElementById('pinTypeDragHandle');
+    let dragging = false, sx, sy, ox, oy;
+    handle.addEventListener('mousedown', (e) => {
+        if (e.target.tagName === 'BUTTON') return;
+        dragging = true; sx = e.clientX; sy = e.clientY;
+        const r = el.getBoundingClientRect(); ox = r.left; oy = r.top;
+        e.preventDefault();
+    });
+    document.addEventListener('mousemove', (e) => {
+        if (!dragging) return;
+        el.style.left = (ox + e.clientX - sx) + 'px';
+        el.style.top = (oy + e.clientY - sy) + 'px';
+    });
+    document.addEventListener('mouseup', () => { dragging = false; });
+})();
+
+// === MAP LAYER SELECTOR TOGGLE + DRAG (Enhancement 1) ===
+window.toggleMapLayerSelector = function() {
+    document.getElementById('mapLayerSelector').classList.toggle('hidden');
+};
+
+(function() {
+    const el = document.getElementById('mapLayerSelector');
+    const handle = document.getElementById('mapLayerDragHandle');
+    let dragging = false, sx, sy, ox, oy;
+    handle.addEventListener('mousedown', (e) => {
+        if (e.target.tagName === 'BUTTON') return;
+        dragging = true; sx = e.clientX; sy = e.clientY;
+        const r = el.getBoundingClientRect();
+        const mr = document.getElementById('mapContainer').getBoundingClientRect();
+        ox = r.left - mr.left; oy = r.top - mr.top;
+        el.style.right = 'auto'; el.classList.add('dragging');
+        e.preventDefault();
+    });
+    document.addEventListener('mousemove', (e) => {
+        if (!dragging) return;
+        el.style.left = (ox + e.clientX - sx) + 'px';
+        el.style.top = (oy + e.clientY - sy) + 'px';
+    });
+    document.addEventListener('mouseup', () => { dragging = false; el.classList.remove('dragging'); });
+})();
+
+// === PIN DESCRIPTION (Enhancement 2) ===
+window.updatePinDescription = function(val) {
+    const l = projectData.layers[selectedLayerId];
+    if (l && l.type === 'point') l.description = val;
+};
+
+// === HAVERSINE DISTANCE UTILITY ===
+function haversineDistance(lat1, lon1, lat2, lon2) {
+    const R = 6371; // km
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function calcLineDistance(coords) {
+    let total = 0;
+    for (let i = 0; i < coords.length - 1; i++) {
+        total += haversineDistance(coords[i][0], coords[i][1], coords[i+1][0], coords[i+1][1]);
+    }
+    return total;
+}
+
+function calcPathDistance(coords, fromIdx, toIdx) {
+    let total = 0;
+    const start = Math.min(fromIdx, toIdx);
+    const end = Math.max(fromIdx, toIdx);
+    for (let i = start; i < end; i++) {
+        total += haversineDistance(coords[i][0], coords[i][1], coords[i+1][0], coords[i+1][1]);
+    }
+    return total;
+}
+
+function formatDistance(km) {
+    if (km < 1) return (km * 1000).toFixed(1) + ' m';
+    return km.toFixed(3) + ' km';
+}
+
+function calcFolderDistance(folderId) {
+    let total = 0;
+    function recurse(fId) {
+        const f = projectData.folders.find(ff => ff.id === fId);
+        if (!f) return;
+        f.items.forEach(id => {
+            const l = projectData.layers[id];
+            if (l && l.type === 'line') total += calcLineDistance(l.coords);
+        });
+        projectData.folders.filter(ff => ff.parentId === fId).forEach(sf => recurse(sf.id));
+    }
+    recurse(folderId);
+    return total;
+}
+
+// === DISTANCE IN CONTEXT MENU (Enhancement 5) ===
+window.ctxCalcDistance = function() {
+    let geo = 0;
+    if (ctxTargetFolderId) {
+        geo = calcFolderDistance(ctxTargetFolderId);
+    } else if (ctxTargetId) {
+        const l = projectData.layers[ctxTargetId];
+        if (l && l.type === 'line') geo = calcLineDistance(l.coords);
+        else if (l && l.type === 'point') { toast('Pins have no path distance', 'info'); return; }
+    }
+    const est = geo * (1 + fiberSlackPct / 100);
+    showDistancePanel({
+        title: ctxTargetFolderId ? 'Folder Distance' : 'Segment Distance',
+        geo, est, slack: fiberSlackPct
+    });
+    ctxTargetFolderId = null;
+};
+
+function showDistancePanel(data) {
+    const dp = document.getElementById('distancePanel');
+    const dc = document.getElementById('distanceContent');
+    let html = '<div class="dist-row"><span class="dist-label">' + (data.title || 'Distance') + '</span></div>';
+    html += '<div class="dist-row"><span class="dist-label">Geometric distance:</span><span class="dist-value">' + formatDistance(data.geo) + '</span></div>';
+    html += '<div class="dist-row"><span class="dist-label">Fiber slack:</span><span class="dist-value">' + data.slack + '%</span></div>';
+    html += '<div class="dist-row"><span class="dist-label">Estimated distance:</span><span class="dist-value blue">' + formatDistance(data.est) + '</span></div>';
+    if (data.aEnd !== undefined) {
+        html += '<div style="margin-top:6px;border-top:1px solid #eee;padding-top:6px;">';
+        html += '<div class="dist-row"><span class="dist-label">A-End (green):</span><span class="dist-value green">vertex ' + (data.aEnd + 1) + '</span></div>';
+        html += '<div class="dist-row"><span class="dist-label">B-End (red):</span><span class="dist-value" style="color:var(--danger);">vertex ' + (data.bEnd + 1) + '</span></div>';
+        html += '<div class="dist-row"><span class="dist-label">Path distance:</span><span class="dist-value">' + formatDistance(data.geo) + '</span></div>';
+        html += '<div class="dist-row"><span class="dist-label">Estimated (+'+ data.slack +'%):</span><span class="dist-value blue">' + formatDistance(data.est) + '</span></div>';
+        html += '</div>';
+    }
+    dc.innerHTML = html;
+    dp.classList.add('show');
+}
+
+window.closeDistancePanel = function() {
+    document.getElementById('distancePanel').classList.remove('show');
+    clearMeasureMarkers();
+};
+
+// === MEASURE A-END → B-END (Enhancement 5) ===
+let measureMode = false;
+let measureClicks = [];
+let measureMarkers = [];
+let measureLineLayer = null;
+
+window.toggleMeasureMode = function() {
+    measureMode = !measureMode;
+    document.getElementById('btnMeasurePath').classList.toggle('active', measureMode);
+    if (measureMode) {
+        measureClicks = [];
+        clearMeasureMarkers();
+        if (!selectedLayerId || !projectData.layers[selectedLayerId] || projectData.layers[selectedLayerId].type !== 'line') {
+            toast('Select a line layer first, then click two points on the line', 'error');
+            measureMode = false;
+            document.getElementById('btnMeasurePath').classList.remove('active');
+            return;
+        }
+        document.getElementById('editBanner').textContent = '📏 MEASURE MODE — Click first point (A-End green), then second point (B-End red)';
+        document.getElementById('editBanner').classList.add('show');
+        toast('Click on the map near the line: first click = A-End, second = B-End', 'info');
+    } else {
+        clearMeasureMarkers();
+        if (!editMode) document.getElementById('editBanner').classList.remove('show');
+        toast('Measure mode OFF', 'info');
+    }
+};
+
+window.ctxMeasureAB = function() {
+    if (ctxTargetId) {
+        selectLayer(ctxTargetId);
+        setTimeout(() => {
+            if (!measureMode) toggleMeasureMode();
+        }, 100);
+    }
+    ctxTargetFolderId = null;
+};
+
+function clearMeasureMarkers() {
+    measureMarkers.forEach(m => map.removeLayer(m));
+    measureMarkers = [];
+    if (measureLineLayer) { map.removeLayer(measureLineLayer); measureLineLayer = null; }
+}
+
+function findNearestVertexIdx(latlng, coords) {
+    let minD = Infinity, idx = 0;
+    coords.forEach((c, i) => {
+        const d = haversineDistance(latlng.lat, latlng.lng, c[0], c[1]);
+        if (d < minD) { minD = d; idx = i; }
+    });
+    return idx;
+}
+
+// Intercept map click for measure mode - added in the main click handler override below
+
+// === EXPORT CHECKED FOLDER AS KML (Enhancement 1) ===
+window.ctxExportFolderKML = function() {
+    if (!ctxTargetFolderId) return;
+    const folder = projectData.folders.find(f => f.id === ctxTargetFolderId);
+    if (!folder) return;
+    // Collect all checked sub-items
+    let k = '<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n<Document>\n';
+    k += '  <name>' + escXml(folder.name) + '</name>\n';
+    k += buildKMLFolderChecked(folder, '  ');
+    k += '</Document>\n</kml>';
+    downloadFile(k, folder.name.replace(/[^a-zA-Z0-9_-]/g, '_') + '.kml', 'application/vnd.google-earth.kml+xml');
+    toast('Exported checked items as KML', 'success');
+    ctxTargetFolderId = null;
+};
+
+function buildKMLFolderChecked(folder, ind) {
+    let k = '';
+    // Sub-folders that are checked
+    projectData.folders.filter(f => f.parentId === folder.id && f.checked !== false).forEach(sf => {
+        k += ind + '<Folder>\n' + ind + '  <name>' + escXml(sf.name) + '</name>\n';
+        k += buildKMLFolderChecked(sf, ind + '  ');
+        k += ind + '</Folder>\n';
+    });
+    folder.items.forEach(id => {
+        if (projectData.folders.find(f => f.id === id)) return;
+        const l = projectData.layers[id]; if (!l) return;
+        k += buildPM(l, ind);
+    });
+    return k;
+}
+
+// === FOLDER DRAG NESTING (Enhancement 3) ===
+// This is handled in the renderFolderTree by adding drag events to folder headers
+
+function moveFolderIntoFolder(sourceFolderId, targetFolderId) {
+    if (sourceFolderId === targetFolderId) return;
+    // Prevent moving a folder into its own descendant
+    function isDescendant(parentId, childId) {
+        const children = projectData.folders.filter(f => f.parentId === parentId);
+        for (const c of children) {
+            if (c.id === childId) return true;
+            if (isDescendant(c.id, childId)) return true;
+        }
+        return false;
+    }
+    if (isDescendant(sourceFolderId, targetFolderId)) {
+        toast('Cannot move a folder into its own subfolder', 'error');
+        return;
+    }
+    const src = projectData.folders.find(f => f.id === sourceFolderId);
+    if (!src) return;
+    // Remove from old parent
+    if (src.parentId) {
+        const oldParent = projectData.folders.find(f => f.id === src.parentId);
+        if (oldParent) oldParent.items = oldParent.items.filter(id => id !== sourceFolderId);
+    }
+    // Set new parent
+    src.parentId = targetFolderId;
+    const target = projectData.folders.find(f => f.id === targetFolderId);
+    if (target && !target.items.includes(sourceFolderId)) {
+        target.items.push(sourceFolderId);
+    }
+    renderFolderTree();
+    toast('Folder moved', 'info');
+}
 } // end initApp
 </script>
 </body>
