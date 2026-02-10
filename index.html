@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<!-- NexiMap KML Studio v1.2 - Light theme, multi-map, vertex editing fix, GeoJSON import -->
+<!-- NexiMap KML Studio v1.3 - Light theme, multi-map, vertex editing fix, GeoJSON import -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NexiMap KML Studio v1.2</title>
+<title>NexiMap KML Studio v1.3</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='2' width='28' height='28' rx='4' fill='%230096D6'/%3E%3Cpath d='M8 12L16 8L24 12L16 16Z' fill='white' opacity='0.9'/%3E%3Cpath d='M8 16L16 20L24 16' stroke='white' stroke-width='1.5' fill='none'/%3E%3Cpath d='M8 20L16 24L24 20' stroke='white' stroke-width='1.5' fill='none'/%3E%3C/svg%3E"/>
 <style>
 :root {
@@ -472,7 +472,7 @@ header {
     <div class="app-logo">
         <svg width="20" height="20" viewBox="0 0 32 32"><rect x="2" y="2" width="28" height="28" rx="4" fill="#0096D6"/><path d="M8 12L16 8L24 12L16 16Z" fill="white" opacity="0.9"/><path d="M8 16L16 20L24 16" stroke="white" stroke-width="1.5" fill="none"/><path d="M8 20L16 24L24 20" stroke="white" stroke-width="1.5" fill="none"/></svg>
         NexiMap KML Studio
-        <span class="ver">v1.2</span>
+        <span class="ver">v1.3</span>
     </div>
 
     <!-- File Menu -->
@@ -492,6 +492,10 @@ header {
     <button class="tool-btn" id="btnAddPoint" onclick="toggleAddPointMode()" title="Click on map to insert vertices">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
         Add Point
+    </button>
+    <button class="tool-btn" id="btnDrawLine" onclick="toggleDrawMode()" title="Draw a new polyline on the map">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 20 8 10 14 14 20 4"/><circle cx="4" cy="20" r="2"/><circle cx="8" cy="10" r="2"/><circle cx="14" cy="14" r="2"/><circle cx="20" cy="4" r="2"/></svg>
+        Draw Line
     </button>
 
     <div class="spacer"></div>
@@ -610,13 +614,16 @@ header {
 
 <!-- CONTEXT MENU -->
 <div class="ctx-menu" id="ctxMenu">
-    <div class="ctx-item" onclick="ctxRename()">✏️ Rename</div>
-    <div class="ctx-item" onclick="ctxDuplicate()">📋 Duplicate</div>
-    <div class="ctx-item" onclick="ctxZoomTo()">🔎 Zoom to</div>
-    <div class="ctx-sep"></div>
-    <div class="ctx-item" onclick="ctxMoveToFolder()">📁 Move to folder…</div>
-    <div class="ctx-sep"></div>
-    <div class="ctx-item danger" onclick="ctxDelete()">🗑️ Delete</div>
+    <div class="ctx-item" data-for="both" onclick="ctxRename()">✏️ Rename</div>
+    <div class="ctx-item" data-for="both" onclick="ctxZoomTo()">🔎 Zoom to</div>
+    <div class="ctx-sep" data-for="both"></div>
+    <div class="ctx-item" data-for="both" onclick="ctxChangeColor()">🎨 Change Color</div>
+    <div class="ctx-item" data-for="both" onclick="ctxChangeWidth()">📏 Change Width</div>
+    <div class="ctx-sep" data-for="layer"></div>
+    <div class="ctx-item" data-for="layer" onclick="ctxDuplicate()">📋 Duplicate</div>
+    <div class="ctx-item" data-for="layer" onclick="ctxMoveToFolder()">📁 Move to folder…</div>
+    <div class="ctx-sep" data-for="both"></div>
+    <div class="ctx-item danger" data-for="both" onclick="ctxDelete()">🗑️ Delete</div>
 </div>
 
 <div id="toastContainer"></div>
@@ -1301,16 +1308,16 @@ function createFolderEl(folder) {
 
     header.addEventListener('dblclick', (e) => {
         e.stopPropagation();
-        const nameSpan = header.querySelector('.tree-folder-name');
-        const input = document.createElement('input');
-        input.className = 'prop-input';
-        input.value = folder.name;
-        input.style.cssText = 'width:100%;font-size:12px;';
-        nameSpan.replaceWith(input);
-        input.focus(); input.select();
-        const done = () => { folder.name = input.value || folder.name; renderFolderTree(); };
-        input.addEventListener('blur', done);
-        input.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') input.blur(); });
+        // Zoom to all layers in this folder
+        zoomToFolder(folder);
+    });
+
+    // Right-click folder for color/width
+    header.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        ctxTargetId = null;
+        ctxTargetFolderId = folder.id;
+        showCtxMenu(e.clientX, e.clientY, true);
     });
 
     // Folder drag-and-drop target
@@ -1366,22 +1373,17 @@ function createFolderEl(folder) {
         });
 
         item.addEventListener('contextmenu', (e) => {
-            e.preventDefault(); ctxTargetId = layer.id;
-            showCtxMenu(e.clientX, e.clientY);
+            e.preventDefault(); ctxTargetId = layer.id; ctxTargetFolderId = null;
+            showCtxMenu(e.clientX, e.clientY, false);
         });
 
         item.addEventListener('dblclick', (e) => {
             e.stopPropagation();
-            const nameSpan = item.querySelector('.tree-item-name');
-            const input = document.createElement('input');
-            input.className = 'prop-input';
-            input.value = layer.name;
-            input.style.cssText = 'flex:1;font-size:11px;';
-            nameSpan.replaceWith(input);
-            input.focus(); input.select();
-            const done = () => { layer.name = input.value || layer.name; renderAll(); updatePropsPanel(); };
-            input.addEventListener('blur', done);
-            input.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') input.blur(); });
+            // Zoom to this layer
+            if (layer.leafletLayer) {
+                if (layer.leafletLayer.getBounds) map.fitBounds(layer.leafletLayer.getBounds(), { padding: [50, 50] });
+                else if (layer.leafletLayer.getLatLng) map.setView(layer.leafletLayer.getLatLng(), 14);
+            }
         });
 
         item.addEventListener('dragstart', (e) => {
@@ -1522,6 +1524,7 @@ window.toggleEditMode = function() {
 
 window.toggleAddPointMode = function() {
     addPointMode = !addPointMode;
+    drawMode = false; document.getElementById('btnDrawLine').classList.remove('active');
     if (addPointMode) { editMode = true; document.getElementById('btnEditMode').classList.add('active'); document.getElementById('editBanner').classList.add('show'); }
     document.getElementById('btnAddPoint').classList.toggle('active', addPointMode);
     if (addPointMode && !selectedLayerId) {
@@ -1532,7 +1535,75 @@ window.toggleAddPointMode = function() {
     toast(addPointMode ? 'Click on map to add vertices' : 'Add point mode OFF', 'info');
 };
 
+// === DRAW MODE ===
+let drawMode = false;
+let drawCoords = [];
+let drawPreviewLayer = null;
+
+window.toggleDrawMode = function() {
+    drawMode = !drawMode;
+    addPointMode = false; document.getElementById('btnAddPoint').classList.remove('active');
+    document.getElementById('btnDrawLine').classList.toggle('active', drawMode);
+    if (drawMode) {
+        drawCoords = [];
+        document.getElementById('editBanner').textContent = '✏️ DRAW MODE — Click to add points, double-click or press Enter to finish, Escape to cancel';
+        document.getElementById('editBanner').classList.add('show');
+        toast('Click on map to draw a new line', 'info');
+    } else {
+        finishDraw();
+    }
+};
+
+function finishDraw() {
+    if (drawPreviewLayer) { map.removeLayer(drawPreviewLayer); drawPreviewLayer = null; }
+    if (drawCoords.length >= 2) {
+        // Create new layer
+        const name = prompt('Name for new line:', 'New Line') || 'New Line';
+        const id = genId();
+        const color = '#' + Math.floor(Math.random()*16777215).toString(16).padStart(6, '0');
+
+        // Find or create a folder
+        let folderId;
+        const existing = projectData.folders.filter(f => !f.parentId);
+        if (existing.length > 0) {
+            folderId = existing[0].id;
+        } else {
+            folderId = genFolderId();
+            projectData.folders.push({ id: folderId, name: 'Drawn Lines', expanded: true, items: [] });
+        }
+
+        projectData.layers[id] = {
+            id, name, type: 'line', coords: drawCoords,
+            originalCoords: JSON.parse(JSON.stringify(drawCoords)),
+            color, width: 3, opacity: 0.9, visible: true,
+            folderId, leafletLayer: null, vertexMarkers: []
+        };
+        const folder = projectData.folders.find(f => f.id === folderId);
+        if (folder) folder.items.push(id);
+
+        selectLayer(id);
+        renderAll(); updateStatus();
+        toast('Created line "' + name + '" with ' + drawCoords.length + ' points', 'success');
+    }
+    drawCoords = [];
+    drawMode = false;
+    document.getElementById('btnDrawLine').classList.remove('active');
+    document.getElementById('editBanner').textContent = '✏️ EDIT MODE — Drag vertices to reposition • Right-click vertex to delete';
+    if (!editMode) document.getElementById('editBanner').classList.remove('show');
+}
+
 map.on('click', (e) => {
+    if (drawMode) {
+        drawCoords.push([e.latlng.lat, e.latlng.lng]);
+        // Update preview line
+        if (drawPreviewLayer) map.removeLayer(drawPreviewLayer);
+        if (drawCoords.length >= 2) {
+            drawPreviewLayer = L.polyline(drawCoords, { color: '#ff6600', weight: 3, dashArray: '8,6' }).addTo(map);
+        }
+        // Show dot at click point
+        L.circleMarker(e.latlng, { radius: 4, color: '#ff6600', fillColor: '#fff', fillOpacity: 1, weight: 2 }).addTo(map);
+        return;
+    }
     if (!addPointMode) return;
     const l = projectData.layers[selectedLayerId];
     if (!l || l.type !== 'line') return;
@@ -1543,6 +1614,13 @@ map.on('click', (e) => {
     }
     l.coords.splice(ins, 0, [e.latlng.lat, e.latlng.lng]);
     renderMapLayers(); updatePropsPanel(); updateStatus();
+});
+
+map.on('dblclick', (e) => {
+    if (drawMode) {
+        e.originalEvent.preventDefault();
+        finishDraw();
+    }
 });
 
 function distToSeg(p, a, b) {
@@ -1568,8 +1646,15 @@ window.selectAllItems = function() {
 window.deselectAll = function() { selectedLayerId = null; renderAll(); updatePropsPanel(); };
 
 // === CONTEXT MENU ===
-function showCtxMenu(x, y) {
+let ctxTargetFolderId = null;
+
+function showCtxMenu(x, y, isFolder) {
     const m = document.getElementById('ctxMenu');
+    // Show/hide items based on target type
+    m.querySelectorAll('[data-for]').forEach(el => {
+        const forType = el.dataset.for;
+        el.style.display = (forType === 'both' || forType === (isFolder ? 'folder' : 'layer')) ? '' : 'none';
+    });
     m.style.left = x + 'px'; m.style.top = y + 'px';
     m.classList.add('show');
 }
@@ -1577,14 +1662,60 @@ function showCtxMenu(x, y) {
 document.addEventListener('click', () => { document.getElementById('ctxMenu').classList.remove('show'); closeMenus(); });
 
 window.ctxRename = function() {
-    const l = projectData.layers[ctxTargetId]; if (!l) return;
-    const n = prompt('Rename:', l.name);
-    if (n) { l.name = n; renderAll(); updatePropsPanel(); }
+    if (ctxTargetFolderId) {
+        const f = projectData.folders.find(f => f.id === ctxTargetFolderId);
+        if (f) { const n = prompt('Rename folder:', f.name); if (n) { f.name = n; renderFolderTree(); } }
+    } else {
+        const l = projectData.layers[ctxTargetId]; if (!l) return;
+        const n = prompt('Rename:', l.name);
+        if (n) { l.name = n; renderAll(); updatePropsPanel(); }
+    }
+    ctxTargetFolderId = null;
 };
-window.ctxDuplicate = () => duplicateLayer(ctxTargetId);
+window.ctxDuplicate = () => { duplicateLayer(ctxTargetId); ctxTargetFolderId = null; };
 window.ctxZoomTo = function() {
-    const l = projectData.layers[ctxTargetId];
-    if (l && l.leafletLayer && l.leafletLayer.getBounds) map.fitBounds(l.leafletLayer.getBounds(), { padding: [40, 40] });
+    if (ctxTargetFolderId) {
+        const f = projectData.folders.find(f => f.id === ctxTargetFolderId);
+        if (f) zoomToFolder(f);
+    } else {
+        const l = projectData.layers[ctxTargetId];
+        if (l && l.leafletLayer && l.leafletLayer.getBounds) map.fitBounds(l.leafletLayer.getBounds(), { padding: [40, 40] });
+    }
+    ctxTargetFolderId = null;
+};
+window.ctxChangeColor = function() {
+    // Create a temporary color picker
+    const input = document.createElement('input');
+    input.type = 'color';
+    input.value = '#3b82f6';
+    input.style.position = 'fixed'; input.style.opacity = '0';
+    document.body.appendChild(input);
+    input.addEventListener('input', () => {
+        const color = input.value;
+        if (ctxTargetFolderId) {
+            applyToFolderLayers(ctxTargetFolderId, l => { l.color = color; });
+        } else if (ctxTargetId) {
+            const l = projectData.layers[ctxTargetId];
+            if (l) l.color = color;
+        }
+        renderAll(); updatePropsPanel();
+    });
+    input.addEventListener('change', () => { document.body.removeChild(input); ctxTargetFolderId = null; });
+    input.click();
+};
+window.ctxChangeWidth = function() {
+    const w = prompt('Line width (1-12):', '3');
+    if (w) {
+        const width = Math.max(1, Math.min(12, parseFloat(w)));
+        if (ctxTargetFolderId) {
+            applyToFolderLayers(ctxTargetFolderId, l => { l.width = width; });
+        } else if (ctxTargetId) {
+            const l = projectData.layers[ctxTargetId];
+            if (l) l.width = width;
+        }
+        renderAll(); updatePropsPanel();
+    }
+    ctxTargetFolderId = null;
 };
 window.ctxMoveToFolder = function() {
     const folders = projectData.folders.filter(f => !f.parentId);
@@ -1593,8 +1724,74 @@ window.ctxMoveToFolder = function() {
         const idx = parseInt(choice) - 1;
         if (idx >= 0 && idx < folders.length) moveLayerToFolder(ctxTargetId, folders[idx].id);
     }
+    ctxTargetFolderId = null;
 };
-window.ctxDelete = () => deleteLayer(ctxTargetId);
+window.ctxDelete = function() {
+    if (ctxTargetFolderId) {
+        if (confirm('Delete this folder and all its layers?')) {
+            deleteFolderRecursive(ctxTargetFolderId);
+            renderAll(); updatePropsPanel(); updateStatus();
+            toast('Folder deleted', 'info');
+        }
+    } else {
+        deleteLayer(ctxTargetId);
+    }
+    ctxTargetFolderId = null;
+};
+
+function applyToFolderLayers(folderId, fn) {
+    const folder = projectData.folders.find(f => f.id === folderId);
+    if (!folder) return;
+    folder.items.forEach(id => {
+        const layer = projectData.layers[id];
+        if (layer) fn(layer);
+    });
+    // Recurse into sub-folders
+    projectData.folders.filter(f => f.parentId === folderId).forEach(sf => {
+        applyToFolderLayers(sf.id, fn);
+    });
+}
+
+function deleteFolderRecursive(folderId) {
+    const folder = projectData.folders.find(f => f.id === folderId);
+    if (!folder) return;
+    // Delete child layers
+    folder.items.forEach(id => {
+        const l = projectData.layers[id];
+        if (l) {
+            if (l.leafletLayer) map.removeLayer(l.leafletLayer);
+            l.vertexMarkers.forEach(m => map.removeLayer(m));
+            delete projectData.layers[id];
+            if (selectedLayerId === id) selectedLayerId = null;
+        }
+    });
+    // Recurse sub-folders
+    projectData.folders.filter(f => f.parentId === folderId).forEach(sf => {
+        deleteFolderRecursive(sf.id);
+    });
+    // Remove folder from parent
+    projectData.folders.forEach(f => { f.items = f.items.filter(i => i !== folderId); });
+    projectData.folders = projectData.folders.filter(f => f.id !== folderId);
+}
+
+function zoomToFolder(folder) {
+    const allCoords = [];
+    function collectCoords(fId) {
+        const f = projectData.folders.find(ff => ff.id === fId);
+        if (!f) return;
+        f.items.forEach(id => {
+            const l = projectData.layers[id];
+            if (l) l.coords.forEach(c => allCoords.push(c));
+        });
+        projectData.folders.filter(ff => ff.parentId === fId).forEach(sf => collectCoords(sf.id));
+    }
+    collectCoords(folder.id);
+    if (allCoords.length > 0) {
+        map.fitBounds(L.latLngBounds(allCoords), { padding: [50, 50] });
+    } else {
+        toast('No coordinates in this folder', 'info');
+    }
+}
 
 // === ACTIONS ===
 window.zoomToSelected = function() {
@@ -1691,24 +1888,54 @@ function buildPM(l, ind) {
 }
 
 // === EXPORT GEOJSON ===
+// === EXPORT GEOJSON (auto-simplified, compact) ===
 window.exportSimplifiedGeoJSON = function() {
+    const lines = Object.values(projectData.layers).filter(l => l.type === 'line');
+    if (!lines.length) { toast('No lines to export', 'error'); return; }
+
+    // Calculate total points and determine if simplification needed
+    const totalPts = lines.reduce((s, l) => s + l.coords.length, 0);
+    const TARGET_TOTAL = 300; // Target max points for NexiMap integration
+    let tolerance = 0;
+
+    if (totalPts > TARGET_TOTAL) {
+        // Auto-calculate tolerance to hit target
+        // Binary search for optimal tolerance
+        let lo = 0.0001, hi = 1.0, best = hi;
+        for (let iter = 0; iter < 30; iter++) {
+            const mid = (lo + hi) / 2;
+            const count = lines.reduce((s, l) => s + douglasPeucker(l.coords, mid).length, 0);
+            if (count > TARGET_TOTAL) { lo = mid; } else { best = mid; hi = mid; }
+        }
+        tolerance = best;
+    }
+
     const features = [];
-    Object.values(projectData.layers).forEach(l => {
-        if (l.type !== 'line') return;
+    let totalSimplified = 0;
+
+    lines.forEach(l => {
+        const simplified = tolerance > 0 ? douglasPeucker(l.coords, tolerance) : l.coords;
+        totalSimplified += simplified.length;
+
         features.push({
             type: 'Feature',
-            properties: { name: l.name, stroke: l.color, 'stroke-width': l.width, 'stroke-opacity': l.opacity,
-                originalPoints: l.originalCoords.length, simplifiedPoints: l.coords.length },
-            geometry: { type: 'LineString', coordinates: l.coords.map(c => [c[1], c[0]]) }
+            properties: { name: l.name, stroke: l.color, 'stroke-width': l.width, 'stroke-opacity': l.opacity },
+            geometry: {
+                type: 'LineString',
+                // Round to 5 decimal places (~1m precision) to reduce file size
+                coordinates: simplified.map(c => [Math.round(c[1] * 100000) / 100000, Math.round(c[0] * 100000) / 100000])
+            }
         });
     });
-    if (!features.length) { toast('No lines to export', 'error'); return; }
-    const gj = { type: 'FeatureCollection',
-        properties: { generator: 'NexiMap KML Studio v1.2', exportDate: new Date().toISOString() },
-        features };
+
+    const gj = { type: 'FeatureCollection', features };
+    // Compact JSON — no pretty printing
+    const jsonStr = JSON.stringify(gj);
     const name = 'Simplified_GeoJSON_' + getProjectName() + '.geojson';
-    downloadFile(JSON.stringify(gj, null, 2), name, 'application/geo+json');
-    toast('Exported ' + features.length + ' lines as GeoJSON', 'success');
+    downloadFile(jsonStr, name, 'application/geo+json');
+
+    const reduction = totalPts > 0 ? Math.round((1 - totalSimplified / totalPts) * 100) : 0;
+    toast(`Exported ${features.length} lines: ${totalPts} → ${totalSimplified} pts (${reduction}% reduction)`, 'success');
 };
 
 function getProjectName() {
@@ -1739,7 +1966,12 @@ document.addEventListener('keydown', (e) => {
     if (e.ctrlKey && e.key === 'o') { e.preventDefault(); openKMLFile(); }
     if (e.ctrlKey && e.key === 's') { e.preventDefault(); saveKML(); }
     if (e.key === 'Delete' && selectedLayerId) { deleteSelected(); }
-    if (e.key === 'Escape') { if (editMode) toggleEditMode(); if (addPointMode) toggleAddPointMode(); }
+    if (e.key === 'Escape') {
+        if (drawMode) { drawCoords = []; if (drawPreviewLayer) { map.removeLayer(drawPreviewLayer); drawPreviewLayer = null; } drawMode = false; document.getElementById('btnDrawLine').classList.remove('active'); document.getElementById('editBanner').classList.remove('show'); toast('Draw cancelled', 'info'); }
+        else if (editMode) toggleEditMode();
+        if (addPointMode) toggleAddPointMode();
+    }
+    if (e.key === 'Enter' && drawMode) { finishDraw(); }
 });
 
 // === UTILS ===
