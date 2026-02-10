@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<!-- NexiMap KML Studio v1.1 - Light theme, multi-map, vertex editing fix, GeoJSON import -->
+<!-- NexiMap KML Studio v1.2 - Light theme, multi-map, vertex editing fix, GeoJSON import -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NexiMap KML Studio v1.1</title>
+<title>NexiMap KML Studio v1.2</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='2' width='28' height='28' rx='4' fill='%230096D6'/%3E%3Cpath d='M8 12L16 8L24 12L16 16Z' fill='white' opacity='0.9'/%3E%3Cpath d='M8 16L16 20L24 16' stroke='white' stroke-width='1.5' fill='none'/%3E%3Cpath d='M8 20L16 24L24 20' stroke='white' stroke-width='1.5' fill='none'/%3E%3C/svg%3E"/>
 <style>
 :root {
@@ -89,16 +89,14 @@ header {
 /* Dropdown menus */
 .menu-dropdown {
     display: none;
-    position: absolute;
-    top: 100%;
-    left: 0;
+    position: fixed;
     background: white;
     border: 1px solid var(--border);
     border-radius: 6px;
     box-shadow: var(--shadow-lg);
     min-width: 200px;
     padding: 4px 0;
-    z-index: 3000;
+    z-index: 9999;
     z-index: 1000;
 }
 .menu-dropdown.show { display: block; }
@@ -152,7 +150,7 @@ header {
 #statusText { font-size: 11px; color: var(--text-muted); padding-right: 8px; }
 
 /* === MAIN LAYOUT === */
-#mainLayout { display: flex; height: calc(100vh - 40px); }
+#mainLayout { display: flex; height: calc(100vh - 40px); position: relative; z-index: 1; }
 
 /* === LEFT PANEL === */
 #leftPanel {
@@ -278,7 +276,7 @@ header {
 #leftResize:hover, #leftResize.active { background: var(--accent); opacity: 0.3; }
 
 /* === MAP === */
-#mapContainer { flex: 1; position: relative; }
+#mapContainer { flex: 1; position: relative; z-index: 0; isolation: isolate; }
 #map { width: 100%; height: 100%; }
 
 /* Map layer selector */
@@ -474,66 +472,15 @@ header {
     <div class="app-logo">
         <svg width="20" height="20" viewBox="0 0 32 32"><rect x="2" y="2" width="28" height="28" rx="4" fill="#0096D6"/><path d="M8 12L16 8L24 12L16 16Z" fill="white" opacity="0.9"/><path d="M8 16L16 20L24 16" stroke="white" stroke-width="1.5" fill="none"/><path d="M8 20L16 24L24 20" stroke="white" stroke-width="1.5" fill="none"/></svg>
         NexiMap KML Studio
-        <span class="ver">v1.1</span>
+        <span class="ver">v1.2</span>
     </div>
 
     <!-- File Menu -->
-    <div style="position:relative;">
-        <button class="menu-item" onclick="toggleMenu('fileMenu')">File</button>
-        <div class="menu-dropdown" id="fileMenu">
-            <button class="menu-dropdown-item" onclick="openKMLFile(); closeMenus();">
-                📂 Open KML… <span class="shortcut">Ctrl+O</span>
-            </button>
-            <button class="menu-dropdown-item" onclick="openGeoJSONFile(); closeMenus();">
-                📂 Open GeoJSON…
-            </button>
-            <div class="menu-sep"></div>
-            <button class="menu-dropdown-item" onclick="openMergeFiles(); closeMenus();">
-                📑 Merge multiple KMLs…
-            </button>
-            <div class="menu-sep"></div>
-            <button class="menu-dropdown-item" onclick="saveKML(); closeMenus();">
-                💾 Save as KML <span class="shortcut">Ctrl+S</span>
-            </button>
-            <button class="menu-dropdown-item" onclick="exportSimplifiedGeoJSON(); closeMenus();">
-                📤 Export Simplified GeoJSON
-            </button>
-            <div class="menu-sep"></div>
-            <button class="menu-dropdown-item" onclick="clearProject(); closeMenus();">
-                🗑️ Clear All
-            </button>
-        </div>
-    </div>
-
+    <button class="menu-item" onclick="toggleMenu('fileMenu', this)">File</button>
     <!-- Edit Menu -->
-    <div style="position:relative;">
-        <button class="menu-item" onclick="toggleMenu('editMenu')">Edit</button>
-        <div class="menu-dropdown" id="editMenu">
-            <button class="menu-dropdown-item" onclick="createNewFolder(); closeMenus();">
-                📁 New Folder
-            </button>
-            <div class="menu-sep"></div>
-            <button class="menu-dropdown-item" onclick="selectAllItems(); closeMenus();">
-                ☑️ Select All Layers
-            </button>
-            <button class="menu-dropdown-item" onclick="deselectAll(); closeMenus();">
-                ⬜ Deselect All
-            </button>
-        </div>
-    </div>
-
+    <button class="menu-item" onclick="toggleMenu('editMenu', this)">Edit</button>
     <!-- View Menu -->
-    <div style="position:relative;">
-        <button class="menu-item" onclick="toggleMenu('viewMenu')">View</button>
-        <div class="menu-dropdown" id="viewMenu">
-            <button class="menu-dropdown-item" onclick="zoomToAll(); closeMenus();">
-                🔍 Zoom to All Layers
-            </button>
-            <button class="menu-dropdown-item" onclick="zoomToSelected(); closeMenus();">
-                🔎 Zoom to Selected
-            </button>
-        </div>
-    </div>
+    <button class="menu-item" onclick="toggleMenu('viewMenu', this)">View</button>
 
     <div class="tool-sep"></div>
 
@@ -673,6 +620,51 @@ header {
 </div>
 
 <div id="toastContainer"></div>
+
+<!-- Menu dropdowns (body-level for z-index above Leaflet) -->
+<div class="menu-dropdown" id="fileMenu">
+    <button class="menu-dropdown-item" onclick="openKMLFile(); closeMenus();">
+        📂 Open KML… <span class="shortcut">Ctrl+O</span>
+    </button>
+    <button class="menu-dropdown-item" onclick="openGeoJSONFile(); closeMenus();">
+        📂 Open GeoJSON…
+    </button>
+    <div class="menu-sep"></div>
+    <button class="menu-dropdown-item" onclick="openMergeFiles(); closeMenus();">
+        📑 Merge multiple KMLs…
+    </button>
+    <div class="menu-sep"></div>
+    <button class="menu-dropdown-item" onclick="saveKML(); closeMenus();">
+        💾 Save as KML <span class="shortcut">Ctrl+S</span>
+    </button>
+    <button class="menu-dropdown-item" onclick="exportSimplifiedGeoJSON(); closeMenus();">
+        📤 Export Simplified GeoJSON
+    </button>
+    <div class="menu-sep"></div>
+    <button class="menu-dropdown-item" onclick="clearProject(); closeMenus();">
+        🗑️ Clear All
+    </button>
+</div>
+<div class="menu-dropdown" id="editMenu">
+    <button class="menu-dropdown-item" onclick="createNewFolder(); closeMenus();">
+        📁 New Folder
+    </button>
+    <div class="menu-sep"></div>
+    <button class="menu-dropdown-item" onclick="selectAllItems(); closeMenus();">
+        ☑️ Select All Layers
+    </button>
+    <button class="menu-dropdown-item" onclick="deselectAll(); closeMenus();">
+        ⬜ Deselect All
+    </button>
+</div>
+<div class="menu-dropdown" id="viewMenu">
+    <button class="menu-dropdown-item" onclick="zoomToAll(); closeMenus();">
+        🔍 Zoom to All Layers
+    </button>
+    <button class="menu-dropdown-item" onclick="zoomToSelected(); closeMenus();">
+        🔎 Zoom to Selected
+    </button>
+</div>
 
 <input type="file" id="fileInput" accept=".kml" onchange="handleFileOpen(event)">
 <input type="file" id="mergeFileInput" accept=".kml" multiple onchange="handleMergeFiles(event)">
@@ -1712,7 +1704,7 @@ window.exportSimplifiedGeoJSON = function() {
     });
     if (!features.length) { toast('No lines to export', 'error'); return; }
     const gj = { type: 'FeatureCollection',
-        properties: { generator: 'NexiMap KML Studio v1.1', exportDate: new Date().toISOString() },
+        properties: { generator: 'NexiMap KML Studio v1.2', exportDate: new Date().toISOString() },
         features };
     const name = 'Simplified_GeoJSON_' + getProjectName() + '.geojson';
     downloadFile(JSON.stringify(gj, null, 2), name, 'application/geo+json');
@@ -1726,11 +1718,17 @@ function getProjectName() {
 }
 
 // === MENUS ===
-window.toggleMenu = function(id) {
+window.toggleMenu = function(id, btn) {
     const m = document.getElementById(id);
     const wasOpen = m.classList.contains('show');
     closeMenus();
-    if (!wasOpen) { m.classList.add('show'); event.stopPropagation(); }
+    if (!wasOpen) {
+        const rect = btn.getBoundingClientRect();
+        m.style.left = rect.left + 'px';
+        m.style.top = rect.bottom + 2 + 'px';
+        m.classList.add('show');
+        event.stopPropagation();
+    }
 };
 window.closeMenus = function() {
     document.querySelectorAll('.menu-dropdown').forEach(m => m.classList.remove('show'));
