@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<!-- NexiMap KML Studio v1.4 - Light theme, multi-map, vertex editing fix, GeoJSON import -->
+<!-- NexiMap KML Studio v1.5 - Light theme, multi-map, vertex editing fix, GeoJSON import -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NexiMap KML Studio v1.4</title>
+<title>NexiMap KML Studio v1.5</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='2' width='28' height='28' rx='4' fill='%230096D6'/%3E%3Cpath d='M8 12L16 8L24 12L16 16Z' fill='white' opacity='0.9'/%3E%3Cpath d='M8 16L16 20L24 16' stroke='white' stroke-width='1.5' fill='none'/%3E%3Cpath d='M8 20L16 24L24 20' stroke='white' stroke-width='1.5' fill='none'/%3E%3C/svg%3E"/>
 <style>
 :root {
@@ -510,6 +510,28 @@ header {
     width: 24px; height: 36px; position: relative;
 }
 .pin-marker svg { width: 24px; height: 36px; filter: drop-shadow(0 2px 3px rgba(0,0,0,0.3)); }
+
+/* Inline color swatches in properties */
+.prop-color-swatch {
+    width: 18px; height: 18px; border-radius: 3px; cursor: pointer;
+    border: 2px solid transparent; transition: all 0.1s; flex-shrink: 0;
+}
+.prop-color-swatch:hover { transform: scale(1.2); border-color: #666; }
+.prop-color-swatch.active { border-color: #333; box-shadow: 0 0 0 1px white, 0 0 0 3px #333; }
+
+/* Layer visibility filters */
+#layerFilters {
+    padding: 6px 10px;
+    border-top: 1px solid var(--border);
+    background: white;
+    display: flex; gap: 10px; flex-wrap: wrap;
+}
+.filter-toggle {
+    display: flex; align-items: center; gap: 4px;
+    font-size: 11px; color: var(--text-secondary); cursor: pointer;
+    user-select: none;
+}
+.filter-toggle input { accent-color: var(--accent); margin: 0; cursor: pointer; }
 </style>
 </head>
 <body>
@@ -519,7 +541,7 @@ header {
     <div class="app-logo">
         <svg width="20" height="20" viewBox="0 0 32 32"><rect x="2" y="2" width="28" height="28" rx="4" fill="#0096D6"/><path d="M8 12L16 8L24 12L16 16Z" fill="white" opacity="0.9"/><path d="M8 16L16 20L24 16" stroke="white" stroke-width="1.5" fill="none"/><path d="M8 20L16 24L24 20" stroke="white" stroke-width="1.5" fill="none"/></svg>
         NexiMap KML Studio
-        <span class="ver">v1.4</span>
+        <span class="ver">v1.5</span>
     </div>
 
     <!-- File Menu -->
@@ -580,6 +602,16 @@ header {
             </div>
         </div>
         <div id="folderTree"></div>
+        <div id="layerFilters">
+            <label class="filter-toggle">
+                <input type="checkbox" id="filterLines" checked onchange="applyLayerFilters()">
+                ━ Lines
+            </label>
+            <label class="filter-toggle">
+                <input type="checkbox" id="filterPins" checked onchange="applyLayerFilters()">
+                📍 Pins
+            </label>
+        </div>
         <div id="leftResize"></div>
     </div>
 
@@ -633,10 +665,16 @@ header {
                 </div>
             </div>
             <div class="prop-section" id="propStyle" style="display:none;">
-                <h4>Line Style</h4>
+                <h4>Style</h4>
                 <div class="prop-row">
                     <span class="prop-label">Color</span>
-                    <input class="prop-input" type="color" id="propColor" value="#3b82f6" onchange="updateSelectedColor(this.value)">
+                    <div id="propColorSwatches" style="display:flex;flex-wrap:wrap;gap:3px;flex:1;"></div>
+                </div>
+                <div class="prop-row" style="margin-top:2px;">
+                    <span class="prop-label"></span>
+                    <input class="prop-input" type="color" id="propColorCustom" value="#3b82f6" onchange="updateSelectedColor(this.value)" style="width:28px;height:24px;padding:1px;flex:none;">
+                    <span style="font-size:10px;color:var(--text-muted);">Custom</span>
+                    <span id="propColorHex" style="font-size:10px;color:var(--text-muted);margin-left:auto;font-family:monospace;"></span>
                 </div>
                 <div class="prop-row">
                     <span class="prop-label">Width</span>
@@ -1315,19 +1353,26 @@ function importGeoJSON(jsonStr, fileName) {
 function renderAll() { renderFolderTree(); renderMapLayers(); }
 
 function renderMapLayers() {
+    const showLines = document.getElementById('filterLines').checked;
+    const showPins = document.getElementById('filterPins').checked;
+
     Object.values(projectData.layers).forEach(layer => {
         if (layer.leafletLayer) map.removeLayer(layer.leafletLayer);
+        layer.leafletLayer = null;
         layer.vertexMarkers.forEach(m => map.removeLayer(m));
         layer.vertexMarkers = [];
     });
 
     Object.values(projectData.layers).forEach(layer => {
         if (!layer.visible) return;
+        if (layer.type === 'line' && !showLines) return;
+        if (layer.type === 'point' && !showPins) return;
+
         if (layer.type === 'line' && layer.coords.length > 1) {
             layer.leafletLayer = L.polyline(layer.coords, {
                 color: layer.color, weight: layer.width, opacity: layer.opacity, interactive: true
             }).addTo(map);
-            layer.leafletLayer.on('click', () => selectLayer(layer.id));
+            layer.leafletLayer.on('click', (e) => { L.DomEvent.stopPropagation(e); selectLayer(layer.id); });
         } else if (layer.type === 'point' && layer.coords.length > 0) {
             const pinSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="36" viewBox="0 0 24 36"><path d="M12 0C5.4 0 0 5.4 0 12c0 9 12 24 12 24s12-15 12-24C24 5.4 18.6 0 12 0z" fill="${layer.color}"/><circle cx="12" cy="12" r="5" fill="white" opacity="0.9"/></svg>`;
             const icon = L.divIcon({
@@ -1337,7 +1382,7 @@ function renderMapLayers() {
                 iconAnchor: [12, 36]
             });
             layer.leafletLayer = L.marker(layer.coords[0], { icon, interactive: true }).addTo(map);
-            layer.leafletLayer.on('click', () => selectLayer(layer.id));
+            layer.leafletLayer.on('click', (e) => { L.DomEvent.stopPropagation(e); selectLayer(layer.id); });
         }
 
         if (editMode && layer.id === selectedLayerId && layer.type === 'line') {
@@ -1345,6 +1390,8 @@ function renderMapLayers() {
         }
     });
 }
+
+window.applyLayerFilters = function() { renderMapLayers(); };
 
 function renderVertexMarkers(layer) {
     layer.vertexMarkers.forEach(m => map.removeLayer(m));
@@ -1532,9 +1579,23 @@ function moveLayerToFolder(layerId, targetId) {
 // === SELECTION ===
 function selectLayer(id) {
     selectedLayerId = id;
+    // Expand parent folders so the item is visible
+    const layer = projectData.layers[id];
+    if (layer) {
+        let fId = layer.folderId;
+        while (fId) {
+            const f = projectData.folders.find(ff => ff.id === fId);
+            if (f) { f.expanded = true; fId = f.parentId; } else break;
+        }
+    }
     renderFolderTree();
     renderMapLayers();
     updatePropsPanel();
+    // Scroll selected item into view
+    setTimeout(() => {
+        const sel = document.querySelector('.tree-item.selected');
+        if (sel) sel.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }, 50);
 }
 
 function updatePropsPanel() {
@@ -1549,9 +1610,23 @@ function updatePropsPanel() {
     show('propSimplify', layer.type === 'line'); show('propActions', true);
 
     document.getElementById('propNameInput').value = layer.name;
-    document.getElementById('propPointCount').textContent = layer.coords.length + ' vertices';
-    document.getElementById('propType').textContent = layer.type === 'line' ? 'LineString' : 'Point';
-    document.getElementById('propColor').value = layer.color;
+    document.getElementById('propPointCount').textContent = layer.coords.length + (layer.type === 'line' ? ' vertices' : ' (pin)');
+    document.getElementById('propType').textContent = layer.type === 'line' ? 'LineString' : 'Pin Marker';
+
+    // Render color swatches
+    const swatchContainer = document.getElementById('propColorSwatches');
+    swatchContainer.innerHTML = '';
+    GIS_COLORS.forEach(c => {
+        const s = document.createElement('div');
+        s.className = 'prop-color-swatch' + (c === layer.color ? ' active' : '');
+        s.style.background = c;
+        if (c === '#ffffff') s.style.border = '2px solid #ddd';
+        s.addEventListener('click', () => { updateSelectedColor(c); updatePropsPanel(); });
+        swatchContainer.appendChild(s);
+    });
+    document.getElementById('propColorCustom').value = layer.color;
+    document.getElementById('propColorHex').textContent = layer.color;
+
     document.getElementById('propWidth').value = layer.width;
     document.getElementById('propWidthVal').textContent = layer.width;
     document.getElementById('propOpacity').value = layer.opacity;
@@ -1561,7 +1636,16 @@ function updatePropsPanel() {
 
 // === PROPERTY UPDATES ===
 window.updateSelectedName = (v) => { const l = projectData.layers[selectedLayerId]; if (l) { l.name = v; renderFolderTree(); } };
-window.updateSelectedColor = (v) => { const l = projectData.layers[selectedLayerId]; if (l) { l.color = v; renderMapLayers(); renderFolderTree(); } };
+window.updateSelectedColor = (v) => {
+    const l = projectData.layers[selectedLayerId];
+    if (l) { l.color = v; renderMapLayers(); renderFolderTree(); }
+    document.getElementById('propColorCustom').value = v;
+    document.getElementById('propColorHex').textContent = v;
+    // Update swatch highlights
+    document.querySelectorAll('#propColorSwatches .prop-color-swatch').forEach(s => {
+        s.classList.toggle('active', s.style.backgroundColor === hexToRgb(v));
+    });
+};
 window.updateSelectedWidth = (v) => {
     const l = projectData.layers[selectedLayerId]; if (!l) return;
     l.width = parseFloat(v); document.getElementById('propWidthVal').textContent = v;
@@ -2383,6 +2467,10 @@ function downloadFile(content, filename, mime) {
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
 }
 function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+function hexToRgb(h) {
+    const r = parseInt(h.slice(1,3),16), g = parseInt(h.slice(3,5),16), b = parseInt(h.slice(5,7),16);
+    return `rgb(${r}, ${g}, ${b})`;
+}
 function escXml(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 
 function toast(msg, type) {
