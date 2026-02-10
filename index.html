@@ -48,7 +48,7 @@ header {
     background: var(--bg-header);
     border-bottom: 1px solid var(--border);
     gap: 4px;
-    z-index: 100;
+    z-index: 2000;
     position: relative;
 }
 
@@ -98,6 +98,7 @@ header {
     box-shadow: var(--shadow-lg);
     min-width: 200px;
     padding: 4px 0;
+    z-index: 3000;
     z-index: 1000;
 }
 .menu-dropdown.show { display: block; }
@@ -578,10 +579,13 @@ header {
         <div id="map"></div>
         <div id="editBanner">✏️ EDIT MODE — Drag vertices to reposition • Right-click vertex to delete</div>
         <div id="mapLayerSelector">
-            <button class="map-layer-btn active" data-layer="osm" onclick="switchMapLayer('osm')">🗺️ OpenStreetMap</button>
-            <button class="map-layer-btn" data-layer="carto-light" onclick="switchMapLayer('carto-light')">☁️ Carto Light</button>
-            <button class="map-layer-btn" data-layer="carto-dark" onclick="switchMapLayer('carto-dark')">🌑 Carto Dark</button>
+            <button class="map-layer-btn active" data-layer="osm" onclick="switchMapLayer('osm')">🗺️ Street Map</button>
+            <button class="map-layer-btn" data-layer="osm-hot" onclick="switchMapLayer('osm-hot')">🏙️ Humanitarian</button>
+            <button class="map-layer-btn" data-layer="carto-voyager" onclick="switchMapLayer('carto-voyager')">🏷️ Labels + Detail</button>
+            <button class="map-layer-btn" data-layer="carto-light" onclick="switchMapLayer('carto-light')">☁️ Light Clean</button>
+            <button class="map-layer-btn" data-layer="carto-dark" onclick="switchMapLayer('carto-dark')">🌑 Dark</button>
             <button class="map-layer-btn" data-layer="satellite" onclick="switchMapLayer('satellite')">🛰️ Satellite</button>
+            <button class="map-layer-btn" data-layer="sat-labels" onclick="switchMapLayer('sat-labels')">🛰️ Satellite + Labels</button>
             <button class="map-layer-btn" data-layer="topo" onclick="switchMapLayer('topo')">⛰️ Topographic</button>
         </div>
         <div id="emptyState">
@@ -739,6 +743,12 @@ const tileLayers = {
     'osm': L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19, attribution: '© OpenStreetMap'
     }),
+    'osm-hot': L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png', {
+        maxZoom: 19, attribution: '© OpenStreetMap HOT'
+    }),
+    'carto-voyager': L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_labels_under/{z}/{x}/{y}{r}.png', {
+        maxZoom: 19, subdomains: 'abcd', attribution: '© CARTO Voyager'
+    }),
     'carto-light': L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
         maxZoom: 19, subdomains: 'abcd', attribution: '© CARTO'
     }),
@@ -748,6 +758,14 @@ const tileLayers = {
     'satellite': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
         maxZoom: 18, attribution: '© Esri'
     }),
+    'sat-labels': L.layerGroup([
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+            maxZoom: 18, attribution: '© Esri'
+        }),
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}{r}.png', {
+            maxZoom: 19, subdomains: 'abcd', pane: 'overlayPane'
+        })
+    ]),
     'topo': L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
         maxZoom: 17, attribution: '© OpenTopoMap'
     })
@@ -832,24 +850,89 @@ mapContainer.addEventListener('drop', (e) => {
     });
 });
 
-// === KML PARSER ===
+// === KML PARSER (robust) ===
 function importKML(kmlStr, fileName) {
+    // Strip any non-XML content before the actual KML (e.g. email headers)
+    const kmlStart = kmlStr.indexOf('<?xml');
+    if (kmlStart > 0) kmlStr = kmlStr.substring(kmlStart);
+    if (kmlStart < 0) {
+        const kmlTag = kmlStr.indexOf('<kml');
+        if (kmlTag >= 0) kmlStr = kmlStr.substring(kmlTag);
+    }
+
+    // Strip namespace prefixes that cause querySelector issues
+    kmlStr = kmlStr.replace(/<kml:(\w)/g, '<$1').replace(/<\/kml:(\w)/g, '</$1');
+    kmlStr = kmlStr.replace(/<gx:(\w)/g, '<gx_$1').replace(/<\/gx:(\w)/g, '</gx_$1');
+
     const doc = new DOMParser().parseFromString(kmlStr, 'text/xml');
+
+    // Check for parse errors
+    const parseErr = doc.querySelector('parsererror');
+    if (parseErr) { toast('KML parse error — file may be malformed', 'error'); }
+
+    // Parse shared styles
+    const sharedStyles = {};
+    doc.querySelectorAll('Style[id]').forEach(s => {
+        sharedStyles['#' + s.getAttribute('id')] = parseStyleEl(s);
+    });
+    // StyleMap support — pick normal style
+    doc.querySelectorAll('StyleMap[id]').forEach(sm => {
+        const normal = sm.querySelector('Pair key');
+        if (normal) {
+            const pairs = sm.querySelectorAll('Pair');
+            for (const pair of pairs) {
+                const key = pair.querySelector('key');
+                if (key && key.textContent.trim() === 'normal') {
+                    const styleUrl = pair.querySelector('styleUrl');
+                    if (styleUrl) {
+                        const ref = styleUrl.textContent.trim();
+                        if (sharedStyles[ref]) sharedStyles['#' + sm.getAttribute('id')] = sharedStyles[ref];
+                    }
+                    const inlineStyle = pair.querySelector('Style');
+                    if (inlineStyle) sharedStyles['#' + sm.getAttribute('id')] = parseStyleEl(inlineStyle);
+                }
+            }
+        }
+    });
+
     const folderId = genFolderId();
     const folder = { id: folderId, name: fileName.replace(/\.kml$/i, ''), expanded: true, items: [] };
 
-    // Parse KML folders recursively
     function processFolder(parentEl, parentFolderId) {
-        const childFolders = parentEl.querySelectorAll(':scope > Folder');
-        childFolders.forEach(kf => {
+        // Handle both <Folder> and <Document> as container elements
+        const childContainers = parentEl.querySelectorAll(':scope > Folder, :scope > Document');
+        childContainers.forEach(kf => {
             const sfId = genFolderId();
-            const sfName = getKmlText(kf, 'name') || 'Folder';
+            const sfName = getKmlText(kf, 'name') || (kf.tagName === 'Document' ? 'Document' : 'Folder');
             const sf = { id: sfId, name: sfName, expanded: true, items: [], parentId: parentFolderId };
 
-            const pms = kf.querySelectorAll(':scope > Placemark');
-            pms.forEach(pm => {
-                const layer = parsePlacemark(pm, sfId);
-                if (layer) { sf.items.push(layer.id); projectData.layers[layer.id] = layer; }
+            // Collect styles scoped to this container
+            const localStyles = {};
+            kf.querySelectorAll(':scope > Style[id]').forEach(s => {
+                localStyles['#' + s.getAttribute('id')] = parseStyleEl(s);
+            });
+            kf.querySelectorAll(':scope > StyleMap[id]').forEach(sm => {
+                const pairs = sm.querySelectorAll('Pair');
+                for (const pair of pairs) {
+                    const key = pair.querySelector('key');
+                    if (key && key.textContent.trim() === 'normal') {
+                        const styleUrl = pair.querySelector('styleUrl');
+                        if (styleUrl) {
+                            const ref = styleUrl.textContent.trim();
+                            const resolved = localStyles[ref] || sharedStyles[ref];
+                            if (resolved) localStyles['#' + sm.getAttribute('id')] = resolved;
+                        }
+                        const inl = pair.querySelector('Style');
+                        if (inl) localStyles['#' + sm.getAttribute('id')] = parseStyleEl(inl);
+                    }
+                }
+            });
+            // Merge local styles into shared for resolution within this scope
+            const mergedStyles = { ...sharedStyles, ...localStyles };
+
+            kf.querySelectorAll(':scope > Placemark').forEach(pm => {
+                const layers = parsePlacemark(pm, sfId, mergedStyles);
+                layers.forEach(layer => { sf.items.push(layer.id); projectData.layers[layer.id] = layer; });
             });
 
             processFolder(kf, sfId);
@@ -863,22 +946,24 @@ function importKML(kmlStr, fileName) {
     }
 
     // Root placemarks
-    const rootPms = doc.querySelectorAll('Document > Placemark, kml > Placemark');
+    const rootSel = ['Document > Placemark', 'kml > Placemark', 'kml > Document > Placemark'];
+    const rootPms = new Set();
+    rootSel.forEach(sel => { try { doc.querySelectorAll(sel).forEach(pm => rootPms.add(pm)); } catch(e) {} });
     rootPms.forEach(pm => {
-        const layer = parsePlacemark(pm, folderId);
-        if (layer) { folder.items.push(layer.id); projectData.layers[layer.id] = layer; }
+        const layers = parsePlacemark(pm, folderId, sharedStyles);
+        layers.forEach(l => { folder.items.push(l.id); projectData.layers[l.id] = l; });
     });
 
-    // Process nested folders
+    // Nested folders
     const docEl = doc.querySelector('Document') || doc.querySelector('kml');
     if (docEl) processFolder(docEl, folderId);
 
-    // Fallback: all placemarks if none found yet
+    // Fallback: grab all placemarks if nothing was found
     if (folder.items.filter(id => projectData.layers[id]).length === 0 &&
         !projectData.folders.some(f => f.parentId === folderId)) {
         doc.querySelectorAll('Placemark').forEach(pm => {
-            const layer = parsePlacemark(pm, folderId);
-            if (layer) { folder.items.push(layer.id); projectData.layers[layer.id] = layer; }
+            const layers = parsePlacemark(pm, folderId, sharedStyles);
+            layers.forEach(l => { folder.items.push(l.id); projectData.layers[l.id] = l; });
         });
     }
 
@@ -889,59 +974,167 @@ function importKML(kmlStr, fileName) {
     updateStatus();
 }
 
-function parsePlacemark(pm, folderId) {
+function parsePlacemark(pm, folderId, sharedStyles) {
     const name = getKmlText(pm, 'name') || 'Unnamed';
-    let coordsEl = pm.querySelector('LineString coordinates');
-    let type = 'line';
-    if (!coordsEl) { coordsEl = pm.querySelector('Point coordinates'); type = 'point'; }
-    if (!coordsEl) {
-        const multi = pm.querySelectorAll('MultiGeometry LineString coordinates');
-        if (multi.length > 0) {
-            let all = [];
-            multi.forEach(c => all = all.concat(parseCoordStr(c.textContent)));
-            if (all.length > 0) {
-                const style = parseStyle(pm);
+    const results = [];
+
+    // Resolve style
+    let style = { color: '#3b82f6', width: 3, opacity: 0.9 };
+    const styleUrlEl = pm.querySelector(':scope > styleUrl');
+    if (styleUrlEl) {
+        const ref = styleUrlEl.textContent.trim();
+        if (sharedStyles[ref]) style = { ...style, ...sharedStyles[ref] };
+    }
+    const inlineStyle = pm.querySelector(':scope > Style');
+    if (inlineStyle) style = { ...style, ...parseStyleEl(inlineStyle) };
+
+    // Collect all geometries from this placemark
+    const geometries = [];
+
+    // Direct geometries
+    pm.querySelectorAll(':scope > LineString, :scope > Point, :scope > Polygon, :scope > LinearRing').forEach(g => {
+        geometries.push(g);
+    });
+
+    // MultiGeometry
+    pm.querySelectorAll('MultiGeometry LineString, MultiGeometry Point, MultiGeometry Polygon, MultiGeometry LinearRing').forEach(g => {
+        geometries.push(g);
+    });
+
+    // gx:Track support
+    pm.querySelectorAll('gx_Track').forEach(track => {
+        const coords = [];
+        track.querySelectorAll('gx_coord').forEach(c => {
+            const parts = c.textContent.trim().split(/\s+/);
+            if (parts.length >= 2) coords.push([parseFloat(parts[1]), parseFloat(parts[0])]);
+        });
+        if (coords.length > 0) {
+            const id = genId();
+            results.push({ id, name, type: 'line', coords, originalCoords: JSON.parse(JSON.stringify(coords)),
+                color: style.color, width: style.width, opacity: style.opacity,
+                visible: true, folderId, leafletLayer: null, vertexMarkers: [] });
+        }
+    });
+
+    // If no direct geometry elements found, try just finding coordinates anywhere
+    if (geometries.length === 0 && results.length === 0) {
+        const anyCoords = pm.querySelector('coordinates');
+        if (anyCoords) {
+            const coords = parseCoordStr(anyCoords.textContent);
+            if (coords.length > 0) {
                 const id = genId();
-                return { id, name, type: 'line', coords: all, originalCoords: JSON.parse(JSON.stringify(all)),
+                const type = coords.length === 1 ? 'point' : 'line';
+                results.push({ id, name, type, coords, originalCoords: JSON.parse(JSON.stringify(coords)),
                     color: style.color, width: style.width, opacity: style.opacity,
-                    visible: true, folderId, leafletLayer: null, vertexMarkers: [] };
+                    visible: true, folderId, leafletLayer: null, vertexMarkers: [] });
             }
         }
-        return null;
+        return results;
     }
-    const coords = parseCoordStr(coordsEl.textContent);
-    if (coords.length === 0) return null;
-    const style = parseStyle(pm);
-    const id = genId();
-    return { id, name, type, coords, originalCoords: JSON.parse(JSON.stringify(coords)),
-        color: style.color, width: style.width, opacity: style.opacity,
-        visible: true, folderId, leafletLayer: null, vertexMarkers: [] };
+
+    let gIdx = 0;
+    geometries.forEach(g => {
+        const tag = g.tagName.toLowerCase();
+        const coordsEl = g.querySelector('coordinates');
+        if (!coordsEl && tag !== 'polygon') return;
+
+        if (tag === 'linestring' || tag === 'linearring') {
+            const coords = parseCoordStr(coordsEl.textContent);
+            if (coords.length > 0) {
+                const id = genId();
+                const suffix = geometries.length > 1 ? ' #' + (++gIdx) : '';
+                results.push({ id, name: name + suffix, type: 'line', coords,
+                    originalCoords: JSON.parse(JSON.stringify(coords)),
+                    color: style.color, width: style.width, opacity: style.opacity,
+                    visible: true, folderId, leafletLayer: null, vertexMarkers: [] });
+            }
+        } else if (tag === 'point') {
+            const coords = parseCoordStr(coordsEl.textContent);
+            if (coords.length > 0) {
+                const id = genId();
+                results.push({ id, name, type: 'point', coords: [coords[0]],
+                    originalCoords: JSON.parse(JSON.stringify([coords[0]])),
+                    color: style.color, width: style.width, opacity: style.opacity,
+                    visible: true, folderId, leafletLayer: null, vertexMarkers: [] });
+            }
+        } else if (tag === 'polygon') {
+            // Extract outer boundary as a line
+            const outerCoords = g.querySelector('outerBoundaryIs coordinates') ||
+                                g.querySelector('outerBoundaryIs LinearRing coordinates');
+            if (outerCoords) {
+                const coords = parseCoordStr(outerCoords.textContent);
+                if (coords.length > 0) {
+                    const id = genId();
+                    const suffix = geometries.length > 1 ? ' #' + (++gIdx) : '';
+                    results.push({ id, name: name + suffix + ' (polygon)', type: 'line', coords,
+                        originalCoords: JSON.parse(JSON.stringify(coords)),
+                        color: style.color, width: style.width, opacity: style.opacity,
+                        visible: true, folderId, leafletLayer: null, vertexMarkers: [] });
+                }
+            }
+        }
+    });
+
+    return results;
 }
 
 function parseCoordStr(str) {
-    return str.trim().split(/\s+/).map(s => {
+    if (!str) return [];
+    // Handle various formats: "lng,lat,alt" or "lng,lat" separated by whitespace or newlines
+    return str.trim().split(/[\s\n\r]+/).map(s => {
+        if (!s || s.length < 3) return null;
         const p = s.split(',');
-        return p.length >= 2 ? [parseFloat(p[1]), parseFloat(p[0])] : null;
-    }).filter(c => c && !isNaN(c[0]) && !isNaN(c[1]));
+        if (p.length >= 2) {
+            const lng = parseFloat(p[0]);
+            const lat = parseFloat(p[1]);
+            if (!isNaN(lat) && !isNaN(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
+                return [lat, lng]; // [lat, lng] for Leaflet
+            }
+        }
+        return null;
+    }).filter(c => c !== null);
 }
 
-function parseStyle(pm) {
-    let color = '#3b82f6', width = 3, opacity = 0.9;
-    const ls = pm.querySelector('Style LineStyle');
+function parseStyleEl(styleEl) {
+    const result = {};
+    const ls = styleEl.querySelector('LineStyle');
     if (ls) {
         const kc = getKmlText(ls, 'color');
         if (kc && kc.length === 8) {
-            opacity = Math.round(parseInt(kc.substr(0, 2), 16) / 255 * 100) / 100;
-            color = '#' + kc.substr(6, 2) + kc.substr(4, 2) + kc.substr(2, 2);
+            result.opacity = Math.round(parseInt(kc.substr(0, 2), 16) / 255 * 100) / 100;
+            result.color = '#' + kc.substr(6, 2) + kc.substr(4, 2) + kc.substr(2, 2);
+        } else if (kc && kc.length === 6) {
+            result.color = '#' + kc.substr(4, 2) + kc.substr(2, 2) + kc.substr(0, 2);
         }
         const w = getKmlText(ls, 'width');
-        if (w) width = parseFloat(w);
+        if (w) result.width = parseFloat(w);
     }
-    return { color, width, opacity };
+    // Also try PolyStyle for polygons
+    const ps = styleEl.querySelector('PolyStyle');
+    if (ps && !ls) {
+        const kc = getKmlText(ps, 'color');
+        if (kc && kc.length === 8) {
+            result.opacity = Math.round(parseInt(kc.substr(0, 2), 16) / 255 * 100) / 100;
+            result.color = '#' + kc.substr(6, 2) + kc.substr(4, 2) + kc.substr(2, 2);
+        }
+    }
+    return result;
+}
+
+function parseStyle(pm) {
+    return parseStyleEl(pm.querySelector('Style') || pm);
 }
 
 function getKmlText(parent, tag) {
-    const el = parent.querySelector(':scope > ' + tag);
+    // Try direct child first, then any descendant
+    let el = parent.querySelector(':scope > ' + tag);
+    if (!el) {
+        // Some KML files use different casing
+        const children = parent.children;
+        for (let i = 0; i < children.length; i++) {
+            if (children[i].tagName.toLowerCase() === tag.toLowerCase()) { el = children[i]; break; }
+        }
+    }
     return el ? el.textContent.trim() : null;
 }
 
