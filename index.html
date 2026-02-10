@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<!-- NexiMap KML Studio v1.3 - Light theme, multi-map, vertex editing fix, GeoJSON import -->
+<!-- NexiMap KML Studio v1.4 - Light theme, multi-map, vertex editing fix, GeoJSON import -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NexiMap KML Studio v1.3</title>
+<title>NexiMap KML Studio v1.4</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='2' width='28' height='28' rx='4' fill='%230096D6'/%3E%3Cpath d='M8 12L16 8L24 12L16 16Z' fill='white' opacity='0.9'/%3E%3Cpath d='M8 16L16 20L24 16' stroke='white' stroke-width='1.5' fill='none'/%3E%3Cpath d='M8 20L16 24L24 20' stroke='white' stroke-width='1.5' fill='none'/%3E%3C/svg%3E"/>
 <style>
 :root {
@@ -462,7 +462,54 @@ header {
 #editBanner.show { display: block; }
 
 /* Hidden inputs */
-#fileInput, #mergeFileInput, #geojsonInput { display: none; }
+#fileInput, #mergeFileInput, #geojsonInput, #logoInput { display: none; }
+
+/* Color palette popup */
+.color-palette {
+    position: fixed; background: white; border: 1px solid var(--border);
+    border-radius: 8px; box-shadow: var(--shadow-lg); padding: 10px;
+    z-index: 9999; display: none; width: 220px;
+}
+.color-palette.show { display: block; }
+.color-palette h5 { font-size: 10px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 6px; letter-spacing: 0.5px; }
+.color-swatches { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+.color-swatch {
+    width: 24px; height: 24px; border-radius: 4px; cursor: pointer;
+    border: 2px solid transparent; transition: all 0.1s;
+}
+.color-swatch:hover { transform: scale(1.15); border-color: #333; }
+.color-swatch.active { border-color: #333; box-shadow: 0 0 0 2px white, 0 0 0 4px #333; }
+.color-palette-custom { display: flex; gap: 6px; align-items: center; }
+.color-palette-custom input[type="color"] { width: 32px; height: 28px; border: 1px solid var(--border); border-radius: 4px; cursor: pointer; padding: 2px; }
+.color-palette-custom span { font-size: 11px; color: var(--text-secondary); }
+
+/* Logo overlay */
+#logoOverlay {
+    position: absolute; z-index: 500; cursor: move;
+    user-select: none; display: none;
+}
+#logoOverlay.show { display: block; }
+#logoOverlay img { max-width: 200px; max-height: 80px; pointer-events: none; }
+#logoOverlay .logo-remove {
+    position: absolute; top: -8px; right: -8px;
+    width: 18px; height: 18px; background: var(--danger); color: white;
+    border: 2px solid white; border-radius: 50%; font-size: 10px;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3); opacity: 0; transition: opacity 0.15s;
+}
+#logoOverlay:hover .logo-remove { opacity: 1; }
+#logoOverlay .logo-resize {
+    position: absolute; bottom: -4px; right: -4px;
+    width: 12px; height: 12px; background: white; border: 2px solid var(--accent);
+    border-radius: 2px; cursor: se-resize; opacity: 0; transition: opacity 0.15s;
+}
+#logoOverlay:hover .logo-resize { opacity: 1; }
+
+/* Pin marker on map */
+.pin-marker {
+    width: 24px; height: 36px; position: relative;
+}
+.pin-marker svg { width: 24px; height: 36px; filter: drop-shadow(0 2px 3px rgba(0,0,0,0.3)); }
 </style>
 </head>
 <body>
@@ -472,7 +519,7 @@ header {
     <div class="app-logo">
         <svg width="20" height="20" viewBox="0 0 32 32"><rect x="2" y="2" width="28" height="28" rx="4" fill="#0096D6"/><path d="M8 12L16 8L24 12L16 16Z" fill="white" opacity="0.9"/><path d="M8 16L16 20L24 16" stroke="white" stroke-width="1.5" fill="none"/><path d="M8 20L16 24L24 20" stroke="white" stroke-width="1.5" fill="none"/></svg>
         NexiMap KML Studio
-        <span class="ver">v1.3</span>
+        <span class="ver">v1.4</span>
     </div>
 
     <!-- File Menu -->
@@ -481,21 +528,32 @@ header {
     <button class="menu-item" onclick="toggleMenu('editMenu', this)">Edit</button>
     <!-- View Menu -->
     <button class="menu-item" onclick="toggleMenu('viewMenu', this)">View</button>
+    <!-- Tools Menu -->
+    <button class="menu-item" onclick="toggleMenu('toolsMenu', this)">Tools</button>
 
     <div class="tool-sep"></div>
 
     <!-- Toolbar buttons -->
     <button class="tool-btn" id="btnEditMode" onclick="toggleEditMode()" title="Toggle vertex editing (drag dots to move)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-        Edit Vertices
     </button>
-    <button class="tool-btn" id="btnAddPoint" onclick="toggleAddPointMode()" title="Click on map to insert vertices">
+    <button class="tool-btn" id="btnAddPoint" onclick="toggleAddPointMode()" title="Click on map to insert vertices into selected line">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
-        Add Point
     </button>
     <button class="tool-btn" id="btnDrawLine" onclick="toggleDrawMode()" title="Draw a new polyline on the map">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 20 8 10 14 14 20 4"/><circle cx="4" cy="20" r="2"/><circle cx="8" cy="10" r="2"/><circle cx="14" cy="14" r="2"/><circle cx="20" cy="4" r="2"/></svg>
-        Draw Line
+    </button>
+    <button class="tool-btn" id="btnPlacePin" onclick="togglePinMode()" title="Place a pin marker on the map">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+    </button>
+
+    <div class="tool-sep"></div>
+
+    <button class="tool-btn" id="btnColorPick" onclick="showColorPalette(this)" title="Color palette">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="8" r="1.5" fill="#ef4444"/><circle cx="16" cy="11" r="1.5" fill="#3b82f6"/><circle cx="14" cy="15" r="1.5" fill="#10b981"/><circle cx="9" cy="14" r="1.5" fill="#f59e0b"/><circle cx="8" cy="10" r="1.5" fill="#8b5cf6"/></svg>
+    </button>
+    <button class="tool-btn" onclick="promptLineWidth()" title="Set line width">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="6" x2="20" y2="6" stroke-width="1"/><line x1="4" y1="12" x2="20" y2="12" stroke-width="3"/><line x1="4" y1="18" x2="20" y2="18" stroke-width="5"/></svg>
     </button>
 
     <div class="spacer"></div>
@@ -544,6 +602,11 @@ header {
                 <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>
             </svg>
             <p>Open a KML or GeoJSON file to begin<br><span class="hint">Use File menu or drag &amp; drop onto the map</span></p>
+        </div>
+        <div id="logoOverlay">
+            <img id="logoImage" src="" alt="Logo">
+            <div class="logo-remove" onclick="removeLogo()">✕</div>
+            <div class="logo-resize" id="logoResizeHandle"></div>
         </div>
     </div>
 
@@ -656,6 +719,26 @@ header {
     <button class="menu-dropdown-item" onclick="createNewFolder(); closeMenus();">
         📁 New Folder
     </button>
+    <button class="menu-dropdown-item" onclick="toggleDrawMode(); closeMenus();">
+        ✏️ Draw New Line
+    </button>
+    <button class="menu-dropdown-item" onclick="togglePinMode(); closeMenus();">
+        📍 Place Pin Marker
+    </button>
+    <div class="menu-sep"></div>
+    <button class="menu-dropdown-item" onclick="toggleEditMode(); closeMenus();">
+        🔧 Edit Vertices
+    </button>
+    <button class="menu-dropdown-item" onclick="toggleAddPointMode(); closeMenus();">
+        ➕ Add Point to Line
+    </button>
+    <div class="menu-sep"></div>
+    <button class="menu-dropdown-item" onclick="showColorPaletteForSelected(); closeMenus();">
+        🎨 Change Color…
+    </button>
+    <button class="menu-dropdown-item" onclick="promptLineWidth(); closeMenus();">
+        📏 Change Width…
+    </button>
     <div class="menu-sep"></div>
     <button class="menu-dropdown-item" onclick="selectAllItems(); closeMenus();">
         ☑️ Select All Layers
@@ -671,11 +754,37 @@ header {
     <button class="menu-dropdown-item" onclick="zoomToSelected(); closeMenus();">
         🔎 Zoom to Selected
     </button>
+    <div class="menu-sep"></div>
+    <button class="menu-dropdown-item" onclick="loadLogoImage(); closeMenus();">
+        🖼️ Add Logo Overlay…
+    </button>
+    <button class="menu-dropdown-item" onclick="toggleLogoSettings(); closeMenus();">
+        ⚙️ Logo Settings…
+    </button>
+</div>
+<div class="menu-dropdown" id="toolsMenu">
+    <button class="menu-dropdown-item" onclick="batchSimplifyAll(); closeMenus();">
+        📐 Simplify All Lines
+    </button>
+    <button class="menu-dropdown-item" onclick="showProjectStats(); closeMenus();">
+        📊 Project Statistics
+    </button>
 </div>
 
 <input type="file" id="fileInput" accept=".kml" onchange="handleFileOpen(event)">
 <input type="file" id="mergeFileInput" accept=".kml" multiple onchange="handleMergeFiles(event)">
 <input type="file" id="geojsonInput" accept=".geojson,.json" onchange="handleGeoJSONOpen(event)">
+<input type="file" id="logoInput" accept="image/*" onchange="handleLogoUpload(event)">
+
+<!-- Color palette popup -->
+<div class="color-palette" id="colorPalette">
+    <h5>Colors</h5>
+    <div class="color-swatches" id="colorSwatches"></div>
+    <div class="color-palette-custom">
+        <input type="color" id="customColorPicker" value="#3b82f6">
+        <span>Custom</span>
+    </div>
+</div>
 
 <script>
 // Load Leaflet dynamically with multi-CDN fallback
@@ -1220,10 +1329,14 @@ function renderMapLayers() {
             }).addTo(map);
             layer.leafletLayer.on('click', () => selectLayer(layer.id));
         } else if (layer.type === 'point' && layer.coords.length > 0) {
-            layer.leafletLayer = L.circleMarker(layer.coords[0], {
-                radius: 6, color: layer.color, fillColor: layer.color,
-                fillOpacity: layer.opacity, weight: 2
-            }).addTo(map);
+            const pinSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="36" viewBox="0 0 24 36"><path d="M12 0C5.4 0 0 5.4 0 12c0 9 12 24 12 24s12-15 12-24C24 5.4 18.6 0 12 0z" fill="${layer.color}"/><circle cx="12" cy="12" r="5" fill="white" opacity="0.9"/></svg>`;
+            const icon = L.divIcon({
+                className: 'pin-marker',
+                html: pinSvg,
+                iconSize: [24, 36],
+                iconAnchor: [12, 36]
+            });
+            layer.leafletLayer = L.marker(layer.coords[0], { icon, interactive: true }).addTo(map);
             layer.leafletLayer.on('click', () => selectLayer(layer.id));
         }
 
@@ -1593,6 +1706,26 @@ function finishDraw() {
 }
 
 map.on('click', (e) => {
+    // Pin mode
+    if (pinMode) {
+        const name = prompt('Pin name:', 'Location') || 'Location';
+        const id = genId();
+        const coords = [[e.latlng.lat, e.latlng.lng]];
+        let folderId;
+        const existing = projectData.folders.filter(f => !f.parentId);
+        if (existing.length > 0) { folderId = existing[0].id; }
+        else { folderId = genFolderId(); projectData.folders.push({ id: folderId, name: 'Markers', expanded: true, items: [] }); }
+        projectData.layers[id] = { id, name, type: 'point', coords, originalCoords: JSON.parse(JSON.stringify(coords)),
+            color: '#ef4444', width: 3, opacity: 1, visible: true, folderId, leafletLayer: null, vertexMarkers: [] };
+        const folder = projectData.folders.find(f => f.id === folderId);
+        if (folder) folder.items.push(id);
+        selectLayer(id); renderAll(); updateStatus();
+        toast('Pin "' + name + '" placed', 'success');
+        pinMode = false; document.getElementById('btnPlacePin').classList.remove('active');
+        document.getElementById('editBanner').classList.remove('show');
+        return;
+    }
+    // Draw mode
     if (drawMode) {
         drawCoords.push([e.latlng.lat, e.latlng.lng]);
         // Update preview line
@@ -1891,16 +2024,15 @@ function buildPM(l, ind) {
 // === EXPORT GEOJSON (auto-simplified, compact) ===
 window.exportSimplifiedGeoJSON = function() {
     const lines = Object.values(projectData.layers).filter(l => l.type === 'line');
-    if (!lines.length) { toast('No lines to export', 'error'); return; }
+    const pins = Object.values(projectData.layers).filter(l => l.type === 'point');
+    if (!lines.length && !pins.length) { toast('No layers to export', 'error'); return; }
 
     // Calculate total points and determine if simplification needed
     const totalPts = lines.reduce((s, l) => s + l.coords.length, 0);
-    const TARGET_TOTAL = 300; // Target max points for NexiMap integration
+    const TARGET_TOTAL = 300;
     let tolerance = 0;
 
     if (totalPts > TARGET_TOTAL) {
-        // Auto-calculate tolerance to hit target
-        // Binary search for optimal tolerance
         let lo = 0.0001, hi = 1.0, best = hi;
         for (let iter = 0; iter < 30; iter++) {
             const mid = (lo + hi) / 2;
@@ -1916,14 +2048,24 @@ window.exportSimplifiedGeoJSON = function() {
     lines.forEach(l => {
         const simplified = tolerance > 0 ? douglasPeucker(l.coords, tolerance) : l.coords;
         totalSimplified += simplified.length;
-
         features.push({
             type: 'Feature',
-            properties: { name: l.name, stroke: l.color, 'stroke-width': l.width, 'stroke-opacity': l.opacity },
+            properties: { name: l.name, stroke: l.color, 'stroke-width': l.width, 'stroke-opacity': l.opacity, layerType: 'line' },
             geometry: {
                 type: 'LineString',
-                // Round to 5 decimal places (~1m precision) to reduce file size
                 coordinates: simplified.map(c => [Math.round(c[1] * 100000) / 100000, Math.round(c[0] * 100000) / 100000])
+            }
+        });
+    });
+
+    // Include pins
+    pins.forEach(l => {
+        features.push({
+            type: 'Feature',
+            properties: { name: l.name, 'marker-color': l.color, layerType: 'pin' },
+            geometry: {
+                type: 'Point',
+                coordinates: [Math.round(l.coords[0][1] * 100000) / 100000, Math.round(l.coords[0][0] * 100000) / 100000]
             }
         });
     });
@@ -1961,15 +2103,274 @@ window.closeMenus = function() {
     document.querySelectorAll('.menu-dropdown').forEach(m => m.classList.remove('show'));
 };
 
-// === KEYBOARD SHORTCUTS ===
+// === PIN PLACEMENT MODE ===
+let pinMode = false;
+
+window.togglePinMode = function() {
+    pinMode = !pinMode;
+    drawMode = false; addPointMode = false;
+    document.getElementById('btnDrawLine').classList.remove('active');
+    document.getElementById('btnAddPoint').classList.remove('active');
+    document.getElementById('btnPlacePin').classList.toggle('active', pinMode);
+    if (pinMode) {
+        document.getElementById('editBanner').textContent = '📍 PIN MODE — Click on map to place a marker, Escape to cancel';
+        document.getElementById('editBanner').classList.add('show');
+    } else {
+        document.getElementById('editBanner').classList.remove('show');
+    }
+    toast(pinMode ? 'Click on map to place a pin' : 'Pin mode OFF', 'info');
+};
+
+// Pin click is handled in the main map.on('click') handler below
+
+// === COLOR PALETTE ===
+const GIS_COLORS = [
+    '#ef4444','#f97316','#f59e0b','#eab308','#84cc16','#22c55e','#10b981','#14b8a6',
+    '#06b6d4','#0ea5e9','#3b82f6','#6366f1','#8b5cf6','#a855f7','#d946ef','#ec4899',
+    '#f43f5e','#78716c','#64748b','#1e293b','#ffffff','#000000','#00ff00','#ff00ff'
+];
+let colorPaletteTarget = null; // 'selected', 'folder:id', or callback function
+
+window.showColorPalette = function(btn) {
+    const pal = document.getElementById('colorPalette');
+    if (pal.classList.contains('show')) { pal.classList.remove('show'); return; }
+    colorPaletteTarget = 'selected';
+    const rect = btn.getBoundingClientRect();
+    pal.style.left = rect.left + 'px';
+    pal.style.top = (rect.bottom + 4) + 'px';
+    renderColorSwatches();
+    pal.classList.add('show');
+};
+
+window.showColorPaletteForSelected = function() {
+    if (!selectedLayerId) { toast('Select a layer first', 'error'); return; }
+    colorPaletteTarget = 'selected';
+    const pal = document.getElementById('colorPalette');
+    pal.style.left = '50%'; pal.style.top = '80px';
+    renderColorSwatches();
+    pal.classList.add('show');
+};
+
+function renderColorSwatches() {
+    const container = document.getElementById('colorSwatches');
+    container.innerHTML = '';
+    const currentColor = selectedLayerId && projectData.layers[selectedLayerId] ? projectData.layers[selectedLayerId].color : '';
+    GIS_COLORS.forEach(c => {
+        const s = document.createElement('div');
+        s.className = 'color-swatch' + (c === currentColor ? ' active' : '');
+        s.style.background = c;
+        if (c === '#ffffff') s.style.border = '2px solid #ddd';
+        s.addEventListener('click', () => applyPaletteColor(c));
+        container.appendChild(s);
+    });
+    document.getElementById('customColorPicker').value = currentColor || '#3b82f6';
+    document.getElementById('customColorPicker').onchange = (e) => applyPaletteColor(e.target.value);
+}
+
+function applyPaletteColor(color) {
+    if (colorPaletteTarget === 'selected') {
+        const l = projectData.layers[selectedLayerId];
+        if (l) { l.color = color; renderAll(); updatePropsPanel(); }
+    } else if (typeof colorPaletteTarget === 'function') {
+        colorPaletteTarget(color);
+    }
+    document.getElementById('colorPalette').classList.remove('show');
+}
+
+// Close palette on outside click
+document.addEventListener('click', (e) => {
+    const pal = document.getElementById('colorPalette');
+    if (pal.classList.contains('show') && !pal.contains(e.target) && !e.target.closest('#btnColorPick')) {
+        pal.classList.remove('show');
+    }
+});
+
+// Update ctxChangeColor to use palette
+window.ctxChangeColor = function() {
+    const pal = document.getElementById('colorPalette');
+    pal.style.left = (event.clientX || 100) + 'px';
+    pal.style.top = (event.clientY || 100) + 'px';
+    if (ctxTargetFolderId) {
+        colorPaletteTarget = (color) => {
+            applyToFolderLayers(ctxTargetFolderId, l => { l.color = color; });
+            renderAll(); updatePropsPanel();
+            ctxTargetFolderId = null;
+        };
+    } else if (ctxTargetId) {
+        const prev = selectedLayerId;
+        selectedLayerId = ctxTargetId;
+        colorPaletteTarget = 'selected';
+        // Restore after
+        setTimeout(() => { selectedLayerId = prev; }, 0);
+        selectedLayerId = ctxTargetId;
+        colorPaletteTarget = (color) => {
+            const l = projectData.layers[ctxTargetId];
+            if (l) l.color = color;
+            renderAll(); updatePropsPanel();
+        };
+    }
+    renderColorSwatches();
+    pal.classList.add('show');
+};
+
+// === LINE WIDTH PROMPT ===
+window.promptLineWidth = function() {
+    const l = projectData.layers[selectedLayerId];
+    if (!l) { toast('Select a layer first', 'error'); return; }
+    const w = prompt('Line width (1-12):', l.width || '3');
+    if (w) {
+        l.width = Math.max(1, Math.min(12, parseFloat(w)));
+        renderAll(); updatePropsPanel();
+    }
+};
+
+// === LOGO OVERLAY ===
+let logoData = { src: null, x: 10, y: null, width: 150 };
+
+window.loadLogoImage = function() { document.getElementById('logoInput').click(); };
+
+window.handleLogoUpload = function(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+        logoData.src = ev.target.result;
+        const overlay = document.getElementById('logoOverlay');
+        const img = document.getElementById('logoImage');
+        img.src = logoData.src;
+        img.style.maxWidth = logoData.width + 'px';
+        overlay.classList.add('show');
+        // Position bottom-left by default
+        const mapRect = document.getElementById('mapContainer').getBoundingClientRect();
+        logoData.x = 10;
+        logoData.y = mapRect.height - 90;
+        overlay.style.left = logoData.x + 'px';
+        overlay.style.bottom = '10px';
+        overlay.style.top = 'auto';
+        toast('Logo added — drag to reposition', 'success');
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+};
+
+window.removeLogo = function() {
+    logoData.src = null;
+    document.getElementById('logoOverlay').classList.remove('show');
+    toast('Logo removed', 'info');
+};
+
+window.toggleLogoSettings = function() {
+    if (!logoData.src) { toast('No logo loaded — use View > Add Logo first', 'error'); return; }
+    const size = prompt('Logo max width in pixels (50-400):', logoData.width);
+    if (size) {
+        logoData.width = Math.max(50, Math.min(400, parseInt(size)));
+        document.getElementById('logoImage').style.maxWidth = logoData.width + 'px';
+    }
+};
+
+// Logo drag
+(function() {
+    const overlay = document.getElementById('logoOverlay');
+    let dragging = false, startX, startY, origX, origY;
+
+    overlay.addEventListener('mousedown', (e) => {
+        if (e.target.classList.contains('logo-remove') || e.target.classList.contains('logo-resize')) return;
+        dragging = true;
+        startX = e.clientX; startY = e.clientY;
+        const rect = overlay.getBoundingClientRect();
+        const mapRect = document.getElementById('mapContainer').getBoundingClientRect();
+        origX = rect.left - mapRect.left;
+        origY = rect.top - mapRect.top;
+        overlay.style.bottom = 'auto';
+        overlay.style.top = origY + 'px';
+        e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if (!dragging) return;
+        const dx = e.clientX - startX, dy = e.clientY - startY;
+        overlay.style.left = (origX + dx) + 'px';
+        overlay.style.top = (origY + dy) + 'px';
+        overlay.style.bottom = 'auto';
+    });
+
+    document.addEventListener('mouseup', () => { dragging = false; });
+
+    // Resize handle
+    const resizeHandle = document.getElementById('logoResizeHandle');
+    let resizing = false, resizeStartX, resizeOrigW;
+
+    resizeHandle.addEventListener('mousedown', (e) => {
+        resizing = true;
+        resizeStartX = e.clientX;
+        resizeOrigW = logoData.width;
+        e.stopPropagation(); e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if (!resizing) return;
+        const dw = e.clientX - resizeStartX;
+        logoData.width = Math.max(50, Math.min(400, resizeOrigW + dw));
+        document.getElementById('logoImage').style.maxWidth = logoData.width + 'px';
+    });
+
+    document.addEventListener('mouseup', () => { resizing = false; });
+})();
+
+// === BATCH SIMPLIFY ===
+window.batchSimplifyAll = function() {
+    const target = prompt('Target total points across all lines (default 300):', '300');
+    if (!target) return;
+    const TARGET = parseInt(target);
+    const lines = Object.values(projectData.layers).filter(l => l.type === 'line');
+    const totalBefore = lines.reduce((s, l) => s + l.coords.length, 0);
+
+    if (totalBefore <= TARGET) {
+        toast('Already under target (' + totalBefore + ' pts)', 'info'); return;
+    }
+
+    let lo = 0.0001, hi = 1.0, best = hi;
+    for (let iter = 0; iter < 30; iter++) {
+        const mid = (lo + hi) / 2;
+        const count = lines.reduce((s, l) => s + douglasPeucker(l.coords, mid).length, 0);
+        if (count > TARGET) { lo = mid; } else { best = mid; hi = mid; }
+    }
+
+    lines.forEach(l => { l.coords = douglasPeucker(l.coords, best); });
+    const totalAfter = lines.reduce((s, l) => s + l.coords.length, 0);
+    renderAll(); updatePropsPanel(); updateStatus();
+    toast(`Simplified: ${totalBefore} → ${totalAfter} points`, 'success');
+};
+
+// === PROJECT STATS ===
+window.showProjectStats = function() {
+    const layers = Object.values(projectData.layers);
+    const lines = layers.filter(l => l.type === 'line');
+    const points = layers.filter(l => l.type === 'point');
+    const totalPts = lines.reduce((s, l) => s + l.coords.length, 0);
+    const folders = projectData.folders.length;
+    alert(
+        `Project Statistics\n` +
+        `─────────────────\n` +
+        `Folders: ${folders}\n` +
+        `Line segments: ${lines.length}\n` +
+        `Pin markers: ${points.length}\n` +
+        `Total vertices: ${totalPts.toLocaleString()}\n` +
+        `Avg pts/line: ${lines.length ? Math.round(totalPts / lines.length) : 0}`
+    );
+};
+
+// === ENHANCED GEOJSON EXPORT/IMPORT (with pins) ===
 document.addEventListener('keydown', (e) => {
     if (e.ctrlKey && e.key === 'o') { e.preventDefault(); openKMLFile(); }
     if (e.ctrlKey && e.key === 's') { e.preventDefault(); saveKML(); }
     if (e.key === 'Delete' && selectedLayerId) { deleteSelected(); }
     if (e.key === 'Escape') {
-        if (drawMode) { drawCoords = []; if (drawPreviewLayer) { map.removeLayer(drawPreviewLayer); drawPreviewLayer = null; } drawMode = false; document.getElementById('btnDrawLine').classList.remove('active'); document.getElementById('editBanner').classList.remove('show'); toast('Draw cancelled', 'info'); }
+        if (pinMode) { pinMode = false; document.getElementById('btnPlacePin').classList.remove('active'); document.getElementById('editBanner').classList.remove('show'); toast('Pin mode cancelled', 'info'); }
+        else if (drawMode) { drawCoords = []; if (drawPreviewLayer) { map.removeLayer(drawPreviewLayer); drawPreviewLayer = null; } drawMode = false; document.getElementById('btnDrawLine').classList.remove('active'); document.getElementById('editBanner').classList.remove('show'); toast('Draw cancelled', 'info'); }
         else if (editMode) toggleEditMode();
         if (addPointMode) toggleAddPointMode();
+        document.getElementById('colorPalette').classList.remove('show');
     }
     if (e.key === 'Enter' && drawMode) { finishDraw(); }
 });
