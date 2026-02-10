@@ -1,172 +1,163 @@
 <!DOCTYPE html>
-<!-- NexiMap KML Studio v1.0 -->
+<!-- NexiMap KML Studio v1.1 - Light theme, multi-map, vertex editing fix, GeoJSON import -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NexiMap KML Studio v1.0</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" 
-      onerror="this.href='https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css'"/>
-<script>
-// Multi-CDN Leaflet loader with fallback
-function loadScript(url) {
-    return new Promise((resolve, reject) => {
-        const s = document.createElement('script');
-        s.src = url;
-        s.onload = resolve;
-        s.onerror = reject;
-        document.head.appendChild(s);
-    });
-}
-
-async function loadLeaflet() {
-    const cdns = [
-        'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
-        'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js',
-        'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js'
-    ];
-    for (const url of cdns) {
-        try {
-            await loadScript(url);
-            if (typeof L !== 'undefined') {
-                console.log('Leaflet loaded from:', url);
-                return true;
-            }
-        } catch(e) { console.warn('CDN failed:', url); }
-    }
-    return false;
-}
-</script>
+<title>NexiMap KML Studio v1.1</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='2' width='28' height='28' rx='4' fill='%230096D6'/%3E%3Cpath d='M8 12L16 8L24 12L16 16Z' fill='white' opacity='0.9'/%3E%3Cpath d='M8 16L16 20L24 16' stroke='white' stroke-width='1.5' fill='none'/%3E%3Cpath d='M8 20L16 24L24 20' stroke='white' stroke-width='1.5' fill='none'/%3E%3C/svg%3E"/>
 <style>
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap');
-
 :root {
-    --bg-primary: #0a0e17;
-    --bg-secondary: #111827;
-    --bg-tertiary: #1a2236;
-    --bg-panel: #0f1525;
-    --border: #1e2d4a;
-    --border-active: #3b82f6;
-    --text-primary: #e2e8f0;
-    --text-secondary: #94a3b8;
-    --text-muted: #64748b;
-    --accent: #3b82f6;
-    --accent-hover: #2563eb;
-    --accent-glow: rgba(59, 130, 246, 0.15);
+    --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+    --bg: #ffffff;
+    --bg-header: #fafafa;
+    --bg-panel: #f8f9fa;
+    --bg-hover: #e8e8e8;
+    --bg-selected: #d0e8f5;
+    --bg-active: #dbeafe;
+    --border: #e0e0e0;
+    --border-focus: #0096D6;
+    --text: #333333;
+    --text-secondary: #666666;
+    --text-muted: #999999;
+    --accent: #0096D6;
+    --accent-hover: #0077aa;
+    --accent-light: #e0f2fe;
+    --accent-gradient: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
     --success: #10b981;
     --warning: #f59e0b;
     --danger: #ef4444;
-    --orange: #f97316;
-    --purple: #8b5cf6;
-    --cyan: #06b6d4;
-    --folder-bg: #1a2236;
-    --item-hover: rgba(59, 130, 246, 0.08);
-    --item-selected: rgba(59, 130, 246, 0.15);
-    --scrollbar-track: #111827;
-    --scrollbar-thumb: #2a3a5c;
+    --shadow: 0 2px 8px rgba(0,0,0,0.1);
+    --shadow-lg: 0 4px 20px rgba(0,0,0,0.15);
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: var(--font); background: var(--bg); color: var(--text); overflow: hidden; height: 100vh; }
 
-body {
-    font-family: 'IBM Plex Sans', sans-serif;
-    background: var(--bg-primary);
-    color: var(--text-primary);
-    overflow: hidden;
-    height: 100vh;
-    width: 100vw;
-}
-
-/* Scrollbar */
 ::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: var(--scrollbar-track); }
-::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #3a4a6c; }
+::-webkit-scrollbar-track { background: #f0f0f0; }
+::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #aaa; }
 
-/* === TOP BAR === */
-#topBar {
-    height: 44px;
-    background: var(--bg-secondary);
-    border-bottom: 1px solid var(--border);
+/* === HEADER === */
+header {
     display: flex;
     align-items: center;
-    padding: 0 16px;
-    gap: 12px;
-    z-index: 1000;
+    height: 40px;
+    padding: 0 8px;
+    background: var(--bg-header);
+    border-bottom: 1px solid var(--border);
+    gap: 4px;
+    z-index: 100;
     position: relative;
 }
 
-#topBar .logo {
-    font-family: 'JetBrains Mono', monospace;
+.app-logo {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 8px;
     font-weight: 700;
     font-size: 14px;
     color: var(--accent);
-    letter-spacing: -0.5px;
     white-space: nowrap;
 }
 
-#topBar .logo span {
-    color: var(--text-muted);
+.app-logo .ver {
     font-weight: 400;
-    font-size: 11px;
-    margin-left: 6px;
+    font-size: 10px;
+    color: var(--text-muted);
+    background: #eee;
+    padding: 1px 5px;
+    border-radius: 3px;
 }
 
-.toolbar-divider {
-    width: 1px;
-    height: 24px;
-    background: var(--border);
-}
-
-.tb-btn {
-    background: none;
-    border: 1px solid transparent;
-    color: var(--text-secondary);
-    font-family: 'IBM Plex Sans', sans-serif;
-    font-size: 12px;
-    padding: 5px 10px;
-    border-radius: 4px;
+/* Menu items */
+.menu-item {
+    background: transparent;
+    border: none;
+    color: #444;
+    padding: 6px 12px;
     cursor: pointer;
+    font-size: 13px;
+    font-family: var(--font);
+    border-radius: 4px;
+    position: relative;
+}
+.menu-item:hover { background: var(--bg-hover); }
+
+/* Dropdown menus */
+.menu-dropdown {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: var(--shadow-lg);
+    min-width: 200px;
+    padding: 4px 0;
+    z-index: 1000;
+}
+.menu-dropdown.show { display: block; }
+
+.menu-dropdown-item {
     display: flex;
     align-items: center;
-    gap: 5px;
-    transition: all 0.15s;
+    gap: 8px;
+    padding: 7px 14px;
+    font-size: 13px;
+    color: var(--text);
+    cursor: pointer;
+    border: none;
+    background: none;
+    width: 100%;
+    text-align: left;
+    font-family: var(--font);
+}
+.menu-dropdown-item:hover { background: var(--accent-light); color: var(--accent); }
+.menu-dropdown-item .shortcut { margin-left: auto; font-size: 11px; color: var(--text-muted); }
+.menu-sep { height: 1px; background: var(--border); margin: 4px 0; }
+
+/* Toolbar buttons */
+.tool-sep { width: 1px; height: 24px; background: #d0d0d0; margin: 0 4px; }
+
+.tool-btn {
+    background: transparent;
+    border: 1px solid transparent;
+    color: #555;
+    padding: 5px 8px;
+    cursor: pointer;
+    font-size: 12px;
+    font-family: var(--font);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
     white-space: nowrap;
+    transition: all 0.15s;
 }
-
-.tb-btn:hover {
-    background: var(--bg-tertiary);
-    color: var(--text-primary);
-    border-color: var(--border);
-}
-
-.tb-btn.active {
-    background: var(--accent-glow);
-    color: var(--accent);
+.tool-btn:hover { background: var(--bg-hover); border-color: #d0d0d0; }
+.tool-btn.active {
+    background: var(--bg-selected);
+    color: #0066a0;
     border-color: var(--accent);
 }
+.tool-btn svg { width: 16px; height: 16px; flex-shrink: 0; }
 
-.tb-btn svg { width: 14px; height: 14px; }
+.spacer { flex: 1; }
 
-.tb-spacer { flex: 1; }
-
-#statusText {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    color: var(--text-muted);
-}
+#statusText { font-size: 11px; color: var(--text-muted); padding-right: 8px; }
 
 /* === MAIN LAYOUT === */
-#mainLayout {
-    display: flex;
-    height: calc(100vh - 44px);
-}
+#mainLayout { display: flex; height: calc(100vh - 40px); }
 
-/* === LEFT PANEL: FOLDER TREE === */
+/* === LEFT PANEL === */
 #leftPanel {
-    width: 280px;
-    min-width: 200px;
-    max-width: 450px;
+    width: 260px;
+    min-width: 180px;
+    max-width: 400px;
     background: var(--bg-panel);
     border-right: 1px solid var(--border);
     display: flex;
@@ -174,15 +165,16 @@ body {
     position: relative;
 }
 
-#leftPanelHeader {
-    padding: 10px 12px;
+.panel-header {
+    padding: 8px 10px;
     border-bottom: 1px solid var(--border);
     display: flex;
     align-items: center;
     justify-content: space-between;
+    background: white;
 }
 
-#leftPanelHeader h3 {
+.panel-header h3 {
     font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
@@ -190,186 +182,139 @@ body {
     color: var(--text-muted);
 }
 
-.panel-actions {
-    display: flex;
-    gap: 4px;
-}
+.panel-actions { display: flex; gap: 2px; }
 
 .panel-btn {
     background: none;
-    border: none;
+    border: 1px solid transparent;
     color: var(--text-muted);
     cursor: pointer;
-    padding: 3px;
+    padding: 3px 5px;
     border-radius: 3px;
     display: flex;
     align-items: center;
+    font-size: 11px;
+    font-family: var(--font);
+    gap: 3px;
     transition: all 0.15s;
 }
-
-.panel-btn:hover {
-    color: var(--text-primary);
-    background: var(--bg-tertiary);
-}
-
+.panel-btn:hover { color: var(--text); background: var(--bg-hover); border-color: var(--border); }
 .panel-btn svg { width: 14px; height: 14px; }
 
-#folderTree {
-    flex: 1;
-    overflow-y: auto;
-    padding: 6px 0;
-}
+#folderTree { flex: 1; overflow-y: auto; padding: 4px 0; }
 
-/* Tree items */
-.tree-folder {
-    user-select: none;
-}
+/* Tree folder */
+.tree-folder { user-select: none; }
 
 .tree-folder-header {
     display: flex;
     align-items: center;
-    padding: 4px 8px 4px 0;
+    padding: 4px 6px;
     cursor: pointer;
     border-radius: 3px;
     margin: 1px 4px;
     transition: background 0.1s;
-    gap: 2px;
+    gap: 3px;
 }
-
-.tree-folder-header:hover { background: var(--item-hover); }
-.tree-folder-header.selected { background: var(--item-selected); }
+.tree-folder-header:hover { background: var(--bg-hover); }
+.tree-folder-header.selected { background: var(--bg-selected); }
+.tree-folder-header.drag-over { outline: 2px dashed var(--accent); outline-offset: -2px; }
 
 .tree-toggle {
-    width: 18px;
-    height: 18px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--text-muted);
-    font-size: 10px;
-    flex-shrink: 0;
+    width: 16px; height: 16px;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--text-muted); font-size: 9px; flex-shrink: 0;
     transition: transform 0.15s;
 }
-
 .tree-toggle.collapsed { transform: rotate(-90deg); }
 
-.tree-folder-icon {
-    width: 16px;
-    height: 16px;
-    margin-right: 5px;
-    flex-shrink: 0;
-}
+.folder-icon { font-size: 14px; margin-right: 4px; }
 
 .tree-folder-name {
-    font-size: 12px;
-    font-weight: 500;
-    color: var(--text-primary);
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    font-size: 12px; font-weight: 500; color: var(--text);
+    flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
 .tree-folder-count {
-    font-size: 10px;
-    color: var(--text-muted);
-    font-family: 'JetBrains Mono', monospace;
-    margin-left: 4px;
+    font-size: 10px; color: var(--text-muted);
+    background: #eee; padding: 0 5px; border-radius: 8px;
 }
 
-.tree-folder-children {
-    padding-left: 16px;
-}
-
+.tree-folder-children { padding-left: 14px; }
 .tree-folder-children.hidden { display: none; }
 
+/* Tree items */
 .tree-item {
-    display: flex;
-    align-items: center;
-    padding: 3px 8px 3px 22px;
-    cursor: pointer;
-    border-radius: 3px;
-    margin: 1px 4px;
-    transition: background 0.1s;
-    gap: 5px;
+    display: flex; align-items: center;
+    padding: 3px 6px 3px 8px;
+    cursor: pointer; border-radius: 3px;
+    margin: 1px 4px; transition: background 0.1s; gap: 5px;
 }
+.tree-item:hover { background: var(--bg-hover); }
+.tree-item.selected { background: var(--bg-selected); }
+.tree-item.drag-over { outline: 2px dashed var(--accent); }
 
-.tree-item:hover { background: var(--item-hover); }
-.tree-item.selected { background: var(--item-selected); }
-
-.tree-item-color {
-    width: 10px;
-    height: 3px;
-    border-radius: 2px;
-    flex-shrink: 0;
-}
+.tree-item-color { width: 12px; height: 3px; border-radius: 2px; flex-shrink: 0; }
 
 .tree-item-name {
-    font-size: 11.5px;
-    color: var(--text-secondary);
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    font-size: 11.5px; color: var(--text-secondary);
+    flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
-.tree-item-pts {
-    font-size: 10px;
-    color: var(--text-muted);
-    font-family: 'JetBrains Mono', monospace;
-}
+.tree-item-pts { font-size: 10px; color: var(--text-muted); }
 
 .tree-item-vis {
-    width: 14px;
-    height: 14px;
-    cursor: pointer;
-    color: var(--text-muted);
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
+    width: 16px; height: 16px; cursor: pointer; color: var(--text-muted);
+    display: flex; align-items: center; flex-shrink: 0;
 }
-
 .tree-item-vis.hidden-item { opacity: 0.3; }
-
-/* Drag-over visual */
-.drag-over { outline: 1px dashed var(--accent); outline-offset: -1px; }
 
 /* Resize handle */
 #leftResize {
+    position: absolute; right: -3px; top: 0; bottom: 0;
+    width: 6px; cursor: col-resize; z-index: 10;
+}
+#leftResize:hover, #leftResize.active { background: var(--accent); opacity: 0.3; }
+
+/* === MAP === */
+#mapContainer { flex: 1; position: relative; }
+#map { width: 100%; height: 100%; }
+
+/* Map layer selector */
+#mapLayerSelector {
     position: absolute;
-    right: -3px;
-    top: 0;
-    bottom: 0;
-    width: 6px;
-    cursor: col-resize;
-    z-index: 10;
+    top: 10px;
+    right: 10px;
+    z-index: 500;
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: var(--shadow);
+    padding: 6px;
 }
 
-#leftResize:hover, #leftResize.active {
-    background: var(--accent);
-    opacity: 0.3;
-}
-
-/* === MAP AREA === */
-#mapContainer {
-    flex: 1;
-    position: relative;
-}
-
-#map {
+.map-layer-btn {
+    display: block;
     width: 100%;
-    height: 100%;
-    background: #0a0e17;
+    padding: 5px 10px;
+    font-size: 11px;
+    font-family: var(--font);
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    cursor: pointer;
+    text-align: left;
+    color: var(--text-secondary);
+    transition: all 0.1s;
+    white-space: nowrap;
 }
+.map-layer-btn:hover { background: #f0f0f0; }
+.map-layer-btn.active { background: var(--bg-selected); color: var(--accent); border-color: var(--accent); font-weight: 600; }
 
-/* Leaflet overrides */
-.leaflet-container { background: #0a0e17 !important; }
-
-/* === RIGHT PANEL: PROPERTIES === */
+/* === RIGHT PANEL === */
 #rightPanel {
-    width: 260px;
+    width: 250px;
     min-width: 200px;
-    max-width: 400px;
     background: var(--bg-panel);
     border-left: 1px solid var(--border);
     display: flex;
@@ -377,240 +322,101 @@ body {
     overflow-y: auto;
 }
 
-#rightPanelHeader {
-    padding: 10px 12px;
-    border-bottom: 1px solid var(--border);
-}
-
-#rightPanelHeader h3 {
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    color: var(--text-muted);
-}
-
 .prop-section {
     padding: 10px 12px;
     border-bottom: 1px solid var(--border);
+    background: white;
 }
 
 .prop-section h4 {
-    font-size: 10px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    color: var(--text-muted);
-    margin-bottom: 8px;
+    font-size: 10px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.5px;
+    color: var(--text-muted); margin-bottom: 8px;
 }
 
-.prop-row {
-    display: flex;
-    align-items: center;
-    margin-bottom: 6px;
-    gap: 8px;
-}
-
-.prop-label {
-    font-size: 11px;
-    color: var(--text-secondary);
-    width: 65px;
-    flex-shrink: 0;
-}
+.prop-row { display: flex; align-items: center; margin-bottom: 6px; gap: 8px; }
+.prop-label { font-size: 11px; color: var(--text-secondary); width: 60px; flex-shrink: 0; }
 
 .prop-input {
-    flex: 1;
-    background: var(--bg-secondary);
-    border: 1px solid var(--border);
-    color: var(--text-primary);
-    font-family: 'IBM Plex Sans', sans-serif;
-    font-size: 11px;
-    padding: 4px 7px;
-    border-radius: 3px;
-    outline: none;
+    flex: 1; background: white;
+    border: 1px solid var(--border); color: var(--text);
+    font-family: var(--font); font-size: 11px;
+    padding: 4px 7px; border-radius: 4px; outline: none;
     transition: border-color 0.15s;
 }
+.prop-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(0,150,214,0.1); }
 
-.prop-input:focus { border-color: var(--accent); }
-
-.prop-input[type="color"] {
-    width: 32px;
-    height: 26px;
-    padding: 2px;
-    cursor: pointer;
-}
+.prop-input[type="color"] { width: 32px; height: 26px; padding: 2px; cursor: pointer; }
 
 .prop-input[type="range"] {
-    -webkit-appearance: none;
-    height: 4px;
-    background: var(--border);
-    border: none;
-    border-radius: 2px;
-    padding: 0;
+    -webkit-appearance: none; height: 4px;
+    background: #ddd; border: none; border-radius: 2px; padding: 0;
 }
-
 .prop-input[type="range"]::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    width: 12px;
-    height: 12px;
-    background: var(--accent);
-    border-radius: 50%;
-    cursor: pointer;
+    -webkit-appearance: none; width: 14px; height: 14px;
+    background: var(--accent); border-radius: 50%; cursor: pointer;
+    border: 2px solid white; box-shadow: 0 1px 3px rgba(0,0,0,0.2);
 }
 
-.prop-range-val {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 10px;
-    color: var(--text-muted);
-    width: 28px;
-    text-align: right;
-}
+.prop-range-val { font-size: 10px; color: var(--text-muted); width: 30px; text-align: right; }
 
 .prop-btn {
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border);
-    color: var(--text-secondary);
-    font-family: 'IBM Plex Sans', sans-serif;
-    font-size: 11px;
-    padding: 5px 10px;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: all 0.15s;
-    width: 100%;
-    text-align: center;
+    background: white; border: 1px solid var(--border);
+    color: var(--text-secondary); font-family: var(--font);
+    font-size: 11px; padding: 6px 10px; border-radius: 4px;
+    cursor: pointer; transition: all 0.15s; width: 100%; text-align: center;
 }
+.prop-btn:hover { background: var(--accent-light); color: var(--accent); border-color: var(--accent); }
+.prop-btn.danger:hover { background: #fef2f2; color: var(--danger); border-color: var(--danger); }
+.prop-btn.success { background: #ecfdf5; color: var(--success); border-color: rgba(16,185,129,0.3); }
+.prop-btn.success:hover { border-color: var(--success); }
+.prop-btn.primary { background: var(--accent); color: white; border-color: var(--accent); }
+.prop-btn.primary:hover { background: var(--accent-hover); }
 
-.prop-btn:hover {
-    background: var(--accent-glow);
-    color: var(--accent);
-    border-color: var(--accent);
+#simplifyPreview { font-size: 10px; color: var(--text-muted); padding: 4px 0; line-height: 1.6; }
+
+/* Empty state */
+#emptyState {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    z-index: 400; pointer-events: none;
 }
+#emptyState.hidden { display: none; }
+#emptyState svg { width: 48px; height: 48px; color: #ccc; margin-bottom: 12px; }
+#emptyState p { font-size: 13px; color: var(--text-muted); text-align: center; line-height: 1.6; }
+#emptyState .hint { font-size: 11px; }
 
-.prop-btn.danger:hover {
-    background: rgba(239,68,68,0.1);
-    color: var(--danger);
-    border-color: var(--danger);
+/* Context menu */
+.ctx-menu {
+    position: fixed; background: white;
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 4px 0; min-width: 180px;
+    box-shadow: var(--shadow-lg); z-index: 7000; display: none;
 }
+.ctx-menu.show { display: block; }
 
-.prop-btn.success {
-    background: rgba(16,185,129,0.1);
-    color: var(--success);
-    border-color: rgba(16,185,129,0.3);
+.ctx-item {
+    padding: 6px 14px; font-size: 12px; color: var(--text-secondary);
+    cursor: pointer; display: flex; align-items: center; gap: 8px;
+    transition: background 0.1s;
 }
+.ctx-item:hover { background: var(--accent-light); color: var(--accent); }
+.ctx-item.danger { color: var(--danger); }
+.ctx-item.danger:hover { background: #fef2f2; }
+.ctx-sep { height: 1px; background: var(--border); margin: 4px 0; }
 
-.prop-btn.success:hover {
-    border-color: var(--success);
-}
-
-/* Simplification preview */
-#simplifyPreview {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 10px;
-    color: var(--text-muted);
-    padding: 4px 0;
-    line-height: 1.6;
-}
-
-/* === MODALS === */
-.modal-overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.6);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 5000;
-    opacity: 0;
-    visibility: hidden;
-    transition: all 0.2s;
-}
-
-.modal-overlay.show {
-    opacity: 1;
-    visibility: visible;
-}
-
-.modal {
-    background: var(--bg-secondary);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 20px;
-    min-width: 380px;
-    max-width: 500px;
-    max-height: 80vh;
-    overflow-y: auto;
-    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
-}
-
-.modal h2 {
-    font-size: 15px;
-    font-weight: 600;
-    margin-bottom: 12px;
-    color: var(--text-primary);
-}
-
-.modal p {
-    font-size: 12px;
-    color: var(--text-secondary);
-    margin-bottom: 10px;
-    line-height: 1.5;
-}
-
-.modal-actions {
-    display: flex;
-    gap: 8px;
-    justify-content: flex-end;
-    margin-top: 16px;
-}
-
-.modal-btn {
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border);
-    color: var(--text-secondary);
-    font-family: 'IBM Plex Sans', sans-serif;
-    font-size: 12px;
-    padding: 6px 16px;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: all 0.15s;
-}
-
-.modal-btn:hover {
-    color: var(--text-primary);
-    border-color: var(--text-muted);
-}
-
-.modal-btn.primary {
-    background: var(--accent);
-    color: white;
-    border-color: var(--accent);
-}
-
-.modal-btn.primary:hover { background: var(--accent-hover); }
-
-/* === TOAST NOTIFICATIONS === */
+/* Toast */
 #toastContainer {
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
-    z-index: 6000;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
+    position: fixed; bottom: 20px; right: 20px;
+    z-index: 6000; display: flex; flex-direction: column; gap: 8px;
 }
-
 .toast {
-    background: var(--bg-secondary);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 10px 16px;
-    font-size: 12px;
-    color: var(--text-primary);
-    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-    animation: toastIn 0.3s ease;
-    max-width: 320px;
+    background: white; border: 1px solid var(--border);
+    border-radius: 6px; padding: 10px 16px; font-size: 12px;
+    color: var(--text); box-shadow: var(--shadow-lg);
+    animation: toastIn 0.3s ease; max-width: 320px;
 }
-
 .toast.success { border-left: 3px solid var(--success); }
 .toast.error { border-left: 3px solid var(--danger); }
 .toast.info { border-left: 3px solid var(--accent); }
@@ -622,161 +428,144 @@ body {
 
 /* Vertex markers */
 .vertex-marker {
-    width: 10px;
-    height: 10px;
-    background: #fff;
+    width: 10px; height: 10px;
+    background: white;
     border: 2px solid var(--accent);
     border-radius: 50%;
     cursor: grab;
     transition: transform 0.1s;
+    position: relative;
+    z-index: 800 !important;
 }
-
-.vertex-marker:hover {
-    transform: scale(1.4);
-}
-
-.vertex-marker.dragging {
-    cursor: grabbing;
-    background: var(--accent);
-}
+.vertex-marker:hover { transform: scale(1.5); background: var(--accent-light); }
+.vertex-marker.dragging { cursor: grabbing; background: var(--accent); }
 
 .vertex-marker-endpoint {
-    width: 12px;
-    height: 12px;
+    width: 12px; height: 12px;
     background: var(--accent);
-    border: 2px solid #fff;
+    border: 2px solid white;
     border-radius: 50%;
     cursor: grab;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    z-index: 800 !important;
 }
 
-/* Hidden file input */
-#fileInput { display: none; }
-#mergeFileInput { display: none; }
-
-/* Empty state */
-#emptyState {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    z-index: 400;
-    pointer-events: none;
+/* Edit mode banner */
+#editBanner {
+    display: none; position: absolute; top: 10px; left: 50%;
+    transform: translateX(-50%); z-index: 600;
+    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+    color: white; padding: 6px 16px; border-radius: 20px;
+    font-size: 12px; font-weight: 600;
+    box-shadow: 0 2px 10px rgba(245,158,11,0.4);
+    white-space: nowrap;
 }
+#editBanner.show { display: block; }
 
-#emptyState.hidden { display: none; }
-
-#emptyState .empty-icon {
-    width: 64px;
-    height: 64px;
-    color: var(--text-muted);
-    opacity: 0.3;
-    margin-bottom: 16px;
-}
-
-#emptyState p {
-    font-size: 13px;
-    color: var(--text-muted);
-    opacity: 0.6;
-    text-align: center;
-    line-height: 1.6;
-}
-
-#emptyState .hint {
-    font-size: 11px;
-    margin-top: 4px;
-}
-
-/* Context menu */
-.ctx-menu {
-    position: fixed;
-    background: var(--bg-secondary);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 4px 0;
-    min-width: 160px;
-    box-shadow: 0 8px 30px rgba(0,0,0,0.4);
-    z-index: 7000;
-    display: none;
-}
-
-.ctx-menu.show { display: block; }
-
-.ctx-item {
-    padding: 6px 12px;
-    font-size: 12px;
-    color: var(--text-secondary);
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    transition: background 0.1s;
-}
-
-.ctx-item:hover {
-    background: var(--item-hover);
-    color: var(--text-primary);
-}
-
-.ctx-item.danger { color: var(--danger); }
-.ctx-item.danger:hover { background: rgba(239,68,68,0.1); }
-
-.ctx-sep {
-    height: 1px;
-    background: var(--border);
-    margin: 4px 0;
-}
+/* Hidden inputs */
+#fileInput, #mergeFileInput, #geojsonInput { display: none; }
 </style>
 </head>
 <body>
 
-<!-- TOP BAR -->
-<div id="topBar">
-    <div class="logo">NexiMap KML Studio<span>v1.0</span></div>
-    <div class="toolbar-divider"></div>
-    <button class="tb-btn" onclick="openKMLFile()" title="Open KML file">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-        Open KML
-    </button>
-    <button class="tb-btn" onclick="openMergeFiles()" title="Merge multiple KML files">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="8" height="10" rx="1"/><rect x="14" y="7" width="8" height="10" rx="1"/><path d="M10 12h4"/></svg>
-        Merge KMLs
-    </button>
-    <div class="toolbar-divider"></div>
-    <button class="tb-btn" onclick="saveKML()" title="Save as KML">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/></svg>
-        Save KML
-    </button>
-    <button class="tb-btn" onclick="exportSimplifiedGeoJSON()" title="Export simplified GeoJSON for NexiMap">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        Export GeoJSON
-    </button>
-    <div class="toolbar-divider"></div>
-    <button class="tb-btn" id="btnEditMode" onclick="toggleEditMode()" title="Toggle vertex editing mode">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+<!-- HEADER -->
+<header>
+    <div class="app-logo">
+        <svg width="20" height="20" viewBox="0 0 32 32"><rect x="2" y="2" width="28" height="28" rx="4" fill="#0096D6"/><path d="M8 12L16 8L24 12L16 16Z" fill="white" opacity="0.9"/><path d="M8 16L16 20L24 16" stroke="white" stroke-width="1.5" fill="none"/><path d="M8 20L16 24L24 20" stroke="white" stroke-width="1.5" fill="none"/></svg>
+        NexiMap KML Studio
+        <span class="ver">v1.1</span>
+    </div>
+
+    <!-- File Menu -->
+    <div style="position:relative;">
+        <button class="menu-item" onclick="toggleMenu('fileMenu')">File</button>
+        <div class="menu-dropdown" id="fileMenu">
+            <button class="menu-dropdown-item" onclick="openKMLFile(); closeMenus();">
+                📂 Open KML… <span class="shortcut">Ctrl+O</span>
+            </button>
+            <button class="menu-dropdown-item" onclick="openGeoJSONFile(); closeMenus();">
+                📂 Open GeoJSON…
+            </button>
+            <div class="menu-sep"></div>
+            <button class="menu-dropdown-item" onclick="openMergeFiles(); closeMenus();">
+                📑 Merge multiple KMLs…
+            </button>
+            <div class="menu-sep"></div>
+            <button class="menu-dropdown-item" onclick="saveKML(); closeMenus();">
+                💾 Save as KML <span class="shortcut">Ctrl+S</span>
+            </button>
+            <button class="menu-dropdown-item" onclick="exportSimplifiedGeoJSON(); closeMenus();">
+                📤 Export Simplified GeoJSON
+            </button>
+            <div class="menu-sep"></div>
+            <button class="menu-dropdown-item" onclick="clearProject(); closeMenus();">
+                🗑️ Clear All
+            </button>
+        </div>
+    </div>
+
+    <!-- Edit Menu -->
+    <div style="position:relative;">
+        <button class="menu-item" onclick="toggleMenu('editMenu')">Edit</button>
+        <div class="menu-dropdown" id="editMenu">
+            <button class="menu-dropdown-item" onclick="createNewFolder(); closeMenus();">
+                📁 New Folder
+            </button>
+            <div class="menu-sep"></div>
+            <button class="menu-dropdown-item" onclick="selectAllItems(); closeMenus();">
+                ☑️ Select All Layers
+            </button>
+            <button class="menu-dropdown-item" onclick="deselectAll(); closeMenus();">
+                ⬜ Deselect All
+            </button>
+        </div>
+    </div>
+
+    <!-- View Menu -->
+    <div style="position:relative;">
+        <button class="menu-item" onclick="toggleMenu('viewMenu')">View</button>
+        <div class="menu-dropdown" id="viewMenu">
+            <button class="menu-dropdown-item" onclick="zoomToAll(); closeMenus();">
+                🔍 Zoom to All Layers
+            </button>
+            <button class="menu-dropdown-item" onclick="zoomToSelected(); closeMenus();">
+                🔎 Zoom to Selected
+            </button>
+        </div>
+    </div>
+
+    <div class="tool-sep"></div>
+
+    <!-- Toolbar buttons -->
+    <button class="tool-btn" id="btnEditMode" onclick="toggleEditMode()" title="Toggle vertex editing (drag dots to move)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
         Edit Vertices
     </button>
-    <button class="tb-btn" id="btnAddPoint" onclick="toggleAddPointMode()" title="Click on map to add points">
+    <button class="tool-btn" id="btnAddPoint" onclick="toggleAddPointMode()" title="Click on map to insert vertices">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
         Add Point
     </button>
-    <div class="tb-spacer"></div>
+
+    <div class="spacer"></div>
     <span id="statusText">Ready</span>
-</div>
+</header>
 
 <!-- MAIN LAYOUT -->
 <div id="mainLayout">
     <!-- LEFT PANEL -->
     <div id="leftPanel">
-        <div id="leftPanelHeader">
-            <h3>Layers &amp; Folders</h3>
+        <div class="panel-header">
+            <h3>Layers</h3>
             <div class="panel-actions">
                 <button class="panel-btn" onclick="createNewFolder()" title="New folder">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><line x1="12" y1="11" x2="12" y2="17"/><line x1="9" y1="14" x2="15" y2="14"/></svg>
+                    New
                 </button>
-                <button class="panel-btn" onclick="selectAllItems()" title="Select all">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                <button class="panel-btn" onclick="expandAllFolders()" title="Expand all">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
+                <button class="panel-btn" onclick="collapseAllFolders()" title="Collapse all">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="18 15 12 9 6 15"/></svg>
                 </button>
             </div>
         </div>
@@ -787,31 +576,42 @@ body {
     <!-- MAP -->
     <div id="mapContainer">
         <div id="map"></div>
+        <div id="editBanner">✏️ EDIT MODE — Drag vertices to reposition • Right-click vertex to delete</div>
+        <div id="mapLayerSelector">
+            <button class="map-layer-btn active" data-layer="osm" onclick="switchMapLayer('osm')">🗺️ OpenStreetMap</button>
+            <button class="map-layer-btn" data-layer="carto-light" onclick="switchMapLayer('carto-light')">☁️ Carto Light</button>
+            <button class="map-layer-btn" data-layer="carto-dark" onclick="switchMapLayer('carto-dark')">🌑 Carto Dark</button>
+            <button class="map-layer-btn" data-layer="satellite" onclick="switchMapLayer('satellite')">🛰️ Satellite</button>
+            <button class="map-layer-btn" data-layer="topo" onclick="switchMapLayer('topo')">⛰️ Topographic</button>
+        </div>
         <div id="emptyState">
-            <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
-                <circle cx="12" cy="10" r="3"/>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>
             </svg>
-            <p>Open a KML file to begin<br><span class="hint">or drag &amp; drop a .kml file onto the map</span></p>
+            <p>Open a KML or GeoJSON file to begin<br><span class="hint">Use File menu or drag &amp; drop onto the map</span></p>
         </div>
     </div>
 
     <!-- RIGHT PANEL -->
     <div id="rightPanel">
-        <div id="rightPanelHeader"><h3>Properties</h3></div>
+        <div class="panel-header"><h3>Properties</h3></div>
         <div id="propsContent">
             <div class="prop-section" id="propNone">
-                <p style="font-size:11px;color:var(--text-muted);text-align:center;padding:20px 0;">Select a layer to edit its properties</p>
+                <p style="font-size:11px;color:var(--text-muted);text-align:center;padding:20px 0;">Select a layer to edit properties</p>
             </div>
             <div class="prop-section" id="propName" style="display:none;">
-                <h4>Layer</h4>
+                <h4>Layer Info</h4>
                 <div class="prop-row">
                     <span class="prop-label">Name</span>
                     <input class="prop-input" type="text" id="propNameInput" onchange="updateSelectedName(this.value)">
                 </div>
                 <div class="prop-row">
                     <span class="prop-label">Points</span>
-                    <span id="propPointCount" style="font-family:'JetBrains Mono';font-size:11px;color:var(--text-muted);">0</span>
+                    <span id="propPointCount" style="font-size:11px;color:var(--text-muted);">0</span>
+                </div>
+                <div class="prop-row">
+                    <span class="prop-label">Type</span>
+                    <span id="propType" style="font-size:11px;color:var(--text-muted);">—</span>
                 </div>
             </div>
             <div class="prop-section" id="propStyle" style="display:none;">
@@ -822,7 +622,7 @@ body {
                 </div>
                 <div class="prop-row">
                     <span class="prop-label">Width</span>
-                    <input class="prop-input" type="range" id="propWidth" min="1" max="10" value="3" oninput="updateSelectedWidth(this.value)">
+                    <input class="prop-input" type="range" id="propWidth" min="1" max="12" value="3" oninput="updateSelectedWidth(this.value)">
                     <span class="prop-range-val" id="propWidthVal">3</span>
                 </div>
                 <div class="prop-row">
@@ -833,22 +633,24 @@ body {
             </div>
             <div class="prop-section" id="propSimplify" style="display:none;">
                 <h4>Simplification</h4>
+                <p style="font-size:10px;color:var(--text-muted);margin-bottom:8px;">Douglas-Peucker algorithm. Lower tolerance = more detail.</p>
                 <div class="prop-row">
                     <span class="prop-label">Tolerance</span>
                     <input class="prop-input" type="range" id="propTolerance" min="0.0001" max="0.1" step="0.0001" value="0.001" oninput="previewSimplify(this.value)">
                     <span class="prop-range-val" id="propToleranceVal">0.001</span>
                 </div>
                 <div id="simplifyPreview"></div>
-                <button class="prop-btn success" onclick="applySimplify()">Apply Simplification</button>
-                <div style="height:6px;"></div>
-                <button class="prop-btn" onclick="undoSimplify()">Undo Simplification</button>
+                <div style="display:flex;gap:6px;margin-top:6px;">
+                    <button class="prop-btn primary" onclick="applySimplify()" style="flex:1;">Apply</button>
+                    <button class="prop-btn" onclick="undoSimplify()" style="flex:1;">Undo</button>
+                </div>
             </div>
             <div class="prop-section" id="propActions" style="display:none;">
                 <h4>Actions</h4>
                 <button class="prop-btn" onclick="zoomToSelected()">Zoom to Layer</button>
-                <div style="height:6px;"></div>
+                <div style="height:5px;"></div>
                 <button class="prop-btn" onclick="duplicateSelected()">Duplicate</button>
-                <div style="height:6px;"></div>
+                <div style="height:5px;"></div>
                 <button class="prop-btn danger" onclick="deleteSelected()">Delete Layer</button>
             </div>
         </div>
@@ -857,338 +659,382 @@ body {
 
 <!-- CONTEXT MENU -->
 <div class="ctx-menu" id="ctxMenu">
-    <div class="ctx-item" onclick="ctxRename()">Rename</div>
-    <div class="ctx-item" onclick="ctxDuplicate()">Duplicate</div>
-    <div class="ctx-item" onclick="ctxZoomTo()">Zoom to</div>
+    <div class="ctx-item" onclick="ctxRename()">✏️ Rename</div>
+    <div class="ctx-item" onclick="ctxDuplicate()">📋 Duplicate</div>
+    <div class="ctx-item" onclick="ctxZoomTo()">🔎 Zoom to</div>
     <div class="ctx-sep"></div>
-    <div class="ctx-item" onclick="ctxMoveToFolder()">Move to folder…</div>
+    <div class="ctx-item" onclick="ctxMoveToFolder()">📁 Move to folder…</div>
     <div class="ctx-sep"></div>
-    <div class="ctx-item danger" onclick="ctxDelete()">Delete</div>
+    <div class="ctx-item danger" onclick="ctxDelete()">🗑️ Delete</div>
 </div>
 
-<!-- TOASTS -->
 <div id="toastContainer"></div>
 
-<!-- FILE INPUTS -->
 <input type="file" id="fileInput" accept=".kml" onchange="handleFileOpen(event)">
 <input type="file" id="mergeFileInput" accept=".kml" multiple onchange="handleMergeFiles(event)">
-
-<!-- MODAL -->
-<div class="modal-overlay" id="modalOverlay">
-    <div class="modal" id="modalContent"></div>
-</div>
+<input type="file" id="geojsonInput" accept=".geojson,.json" onchange="handleGeoJSONOpen(event)">
 
 <script>
-// ============================================================
-// NexiMap KML Studio v1.0 — Core Application
-// ============================================================
+// Load Leaflet dynamically with multi-CDN fallback
+function loadScript(url) {
+    return new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = url; s.onload = resolve; s.onerror = reject;
+        document.head.appendChild(s);
+    });
+}
+function loadCSS(url) {
+    return new Promise((resolve) => {
+        const l = document.createElement('link');
+        l.rel = 'stylesheet'; l.href = url;
+        l.onload = resolve; l.onerror = resolve;
+        document.head.appendChild(l);
+    });
+}
+
+async function loadLeaflet() {
+    const cssCDNs = [
+        'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
+        'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css',
+        'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css'
+    ];
+    const jsCDNs = [
+        'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
+        'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js',
+        'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js'
+    ];
+    for (const url of cssCDNs) { try { await loadCSS(url); break; } catch(e) {} }
+    for (const url of jsCDNs) {
+        try { await loadScript(url); if (typeof L !== 'undefined') return true; }
+        catch(e) { console.warn('CDN failed:', url); }
+    }
+    return false;
+}
 
 (async function() {
-    // Wait for Leaflet
-    const loaded = await loadLeaflet();
-    if (!loaded) {
-        document.getElementById('emptyState').innerHTML = `
-            <p style="color:#ef4444;font-size:14px;padding:20px;">
-                <strong>Failed to load Leaflet map library.</strong><br><br>
-                Please check your internet connection and reload.<br>
-                The app requires Leaflet.js from a CDN.
-            </p>`;
+    const ok = await loadLeaflet();
+    if (!ok) {
+        document.getElementById('emptyState').innerHTML = '<p style="color:#ef4444;font-size:14px;padding:30px;">Failed to load Leaflet map library.<br>Check internet connection and reload.</p>';
         return;
     }
+    initApp();
+})();
+
+function initApp() {
 
 // === DATA MODEL ===
-let projectData = {
-    folders: [],  // { id, name, expanded, items: [layerId...] }
-    layers: {},   // layerId -> { id, name, coords, originalCoords, color, width, opacity, visible, folderId, leafletLayer, vertexMarkers }
-};
-
+let projectData = { folders: [], layers: {} };
 let nextId = 1;
-const genId = () => `layer_${nextId++}`;
-const genFolderId = () => `folder_${nextId++}`;
-
+const genId = () => 'L' + (nextId++);
+const genFolderId = () => 'F' + (nextId++);
 let selectedLayerId = null;
-let selectedFolderIds = new Set();
 let editMode = false;
 let addPointMode = false;
 let ctxTargetId = null;
 
-// === MAP INIT ===
-const map = L.map('map', {
-    center: [20, 0],
-    zoom: 3,
-    zoomControl: true,
-    attributionControl: false
-});
+// === MAP ===
+const map = L.map('map', { center: [20, 0], zoom: 3, zoomControl: true, attributionControl: true });
 
-// Dark tile layer
-L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-    maxZoom: 19,
-    subdomains: 'abcd'
-}).addTo(map);
+const tileLayers = {
+    'osm': L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19, attribution: '© OpenStreetMap'
+    }),
+    'carto-light': L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+        maxZoom: 19, subdomains: 'abcd', attribution: '© CARTO'
+    }),
+    'carto-dark': L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        maxZoom: 19, subdomains: 'abcd', attribution: '© CARTO'
+    }),
+    'satellite': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        maxZoom: 18, attribution: '© Esri'
+    }),
+    'topo': L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+        maxZoom: 17, attribution: '© OpenTopoMap'
+    })
+};
 
-L.control.attribution({ position: 'bottomright', prefix: 'NexiMap KML Studio' }).addTo(map);
+let currentTileLayer = tileLayers['osm'];
+currentTileLayer.addTo(map);
+
+window.switchMapLayer = function(key) {
+    map.removeLayer(currentTileLayer);
+    currentTileLayer = tileLayers[key];
+    currentTileLayer.addTo(map);
+    document.querySelectorAll('.map-layer-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.layer === key);
+    });
+};
 
 // === FILE I/O ===
-function openKMLFile() {
-    document.getElementById('fileInput').click();
-}
+window.openKMLFile = () => document.getElementById('fileInput').click();
+window.openMergeFiles = () => document.getElementById('mergeFileInput').click();
+window.openGeoJSONFile = () => document.getElementById('geojsonInput').click();
 
-function openMergeFiles() {
-    document.getElementById('mergeFileInput').click();
-}
-
-function handleFileOpen(e) {
+window.handleFileOpen = function(e) {
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (ev) => {
-        try {
-            importKML(ev.target.result, file.name);
-            toast(`Opened ${file.name}`, 'success');
-        } catch (err) {
-            toast(`Error parsing KML: ${err.message}`, 'error');
-        }
+        try { importKML(ev.target.result, file.name); toast('Opened ' + file.name, 'success'); }
+        catch (err) { toast('Error: ' + err.message, 'error'); }
     };
     reader.readAsText(file);
     e.target.value = '';
-}
+};
 
-function handleMergeFiles(e) {
+window.handleMergeFiles = function(e) {
     const files = Array.from(e.target.files);
-    if (files.length === 0) return;
+    if (!files.length) return;
     let loaded = 0;
     files.forEach(file => {
         const reader = new FileReader();
         reader.onload = (ev) => {
-            try {
-                importKML(ev.target.result, file.name);
-                loaded++;
-                if (loaded === files.length) {
-                    toast(`Merged ${files.length} KML files`, 'success');
-                }
-            } catch (err) {
-                toast(`Error in ${file.name}: ${err.message}`, 'error');
-            }
+            try { importKML(ev.target.result, file.name); }
+            catch (err) { toast('Error in ' + file.name + ': ' + err.message, 'error'); }
+            loaded++;
+            if (loaded === files.length) toast('Merged ' + files.length + ' KML files', 'success');
         };
         reader.readAsText(file);
     });
     e.target.value = '';
-}
+};
 
-// Drag and drop support
+window.handleGeoJSONOpen = function(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+        try { importGeoJSON(ev.target.result, file.name); toast('Opened ' + file.name, 'success'); }
+        catch (err) { toast('Error: ' + err.message, 'error'); }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+};
+
+// Drag-and-drop
 const mapContainer = document.getElementById('mapContainer');
-mapContainer.addEventListener('dragover', (e) => { e.preventDefault(); e.stopPropagation(); });
+mapContainer.addEventListener('dragover', (e) => { e.preventDefault(); });
 mapContainer.addEventListener('drop', (e) => {
     e.preventDefault();
-    e.stopPropagation();
-    const files = Array.from(e.dataTransfer.files).filter(f => f.name.endsWith('.kml'));
-    files.forEach(file => {
+    Array.from(e.dataTransfer.files).forEach(file => {
         const reader = new FileReader();
         reader.onload = (ev) => {
             try {
-                importKML(ev.target.result, file.name);
-                toast(`Loaded ${file.name}`, 'success');
-            } catch (err) {
-                toast(`Error: ${err.message}`, 'error');
-            }
+                if (file.name.endsWith('.geojson') || file.name.endsWith('.json')) {
+                    importGeoJSON(ev.target.result, file.name);
+                } else if (file.name.endsWith('.kml')) {
+                    importKML(ev.target.result, file.name);
+                }
+                toast('Loaded ' + file.name, 'success');
+            } catch (err) { toast('Error: ' + err.message, 'error'); }
         };
         reader.readAsText(file);
     });
 });
 
 // === KML PARSER ===
-function importKML(kmlString, fileName) {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(kmlString, 'text/xml');
-
-    // Create a folder for this file
+function importKML(kmlStr, fileName) {
+    const doc = new DOMParser().parseFromString(kmlStr, 'text/xml');
     const folderId = genFolderId();
-    const folderName = fileName.replace(/\.kml$/i, '');
-    const folder = { id: folderId, name: folderName, expanded: true, items: [] };
+    const folder = { id: folderId, name: fileName.replace(/\.kml$/i, ''), expanded: true, items: [] };
 
-    // Parse KML folders
-    const kmlFolders = doc.querySelectorAll('Folder');
-    if (kmlFolders.length > 0) {
-        kmlFolders.forEach(kf => {
-            const subFolderName = getKmlText(kf, 'name') || 'Unnamed Folder';
-            const subFolderId = genFolderId();
-            const subFolder = { id: subFolderId, name: subFolderName, expanded: true, items: [], parentId: folderId };
-            
-            // Parse placemarks within this folder
-            const placemarks = kf.querySelectorAll(':scope > Placemark');
-            placemarks.forEach(pm => {
-                const layer = parsePlacemark(pm, subFolderId);
-                if (layer) {
-                    subFolder.items.push(layer.id);
-                    projectData.layers[layer.id] = layer;
-                }
+    // Parse KML folders recursively
+    function processFolder(parentEl, parentFolderId) {
+        const childFolders = parentEl.querySelectorAll(':scope > Folder');
+        childFolders.forEach(kf => {
+            const sfId = genFolderId();
+            const sfName = getKmlText(kf, 'name') || 'Folder';
+            const sf = { id: sfId, name: sfName, expanded: true, items: [], parentId: parentFolderId };
+
+            const pms = kf.querySelectorAll(':scope > Placemark');
+            pms.forEach(pm => {
+                const layer = parsePlacemark(pm, sfId);
+                if (layer) { sf.items.push(layer.id); projectData.layers[layer.id] = layer; }
             });
 
-            if (subFolder.items.length > 0) {
-                projectData.folders.push(subFolder);
-                folder.items.push(subFolderId);
+            processFolder(kf, sfId);
+
+            if (sf.items.length > 0 || projectData.folders.some(f => f.parentId === sfId)) {
+                projectData.folders.push(sf);
+                const parent = projectData.folders.find(f => f.id === parentFolderId) || folder;
+                parent.items.push(sfId);
             }
         });
     }
 
-    // Parse root-level placemarks
-    const rootPlacemarks = doc.querySelectorAll('Document > Placemark, kml > Placemark');
-    rootPlacemarks.forEach(pm => {
+    // Root placemarks
+    const rootPms = doc.querySelectorAll('Document > Placemark, kml > Placemark');
+    rootPms.forEach(pm => {
         const layer = parsePlacemark(pm, folderId);
-        if (layer) {
-            folder.items.push(layer.id);
-            projectData.layers[layer.id] = layer;
-        }
+        if (layer) { folder.items.push(layer.id); projectData.layers[layer.id] = layer; }
     });
 
-    // If no folders were found with placemarks, try all placemarks
-    if (Object.keys(projectData.layers).length === 0 || folder.items.length === 0) {
-        const allPms = doc.querySelectorAll('Placemark');
-        allPms.forEach(pm => {
+    // Process nested folders
+    const docEl = doc.querySelector('Document') || doc.querySelector('kml');
+    if (docEl) processFolder(docEl, folderId);
+
+    // Fallback: all placemarks if none found yet
+    if (folder.items.filter(id => projectData.layers[id]).length === 0 &&
+        !projectData.folders.some(f => f.parentId === folderId)) {
+        doc.querySelectorAll('Placemark').forEach(pm => {
             const layer = parsePlacemark(pm, folderId);
-            if (layer) {
-                folder.items.push(layer.id);
-                projectData.layers[layer.id] = layer;
-            }
+            if (layer) { folder.items.push(layer.id); projectData.layers[layer.id] = layer; }
         });
     }
 
     projectData.folders.push(folder);
     renderAll();
-    zoomToAll();
+    zoomToAllInternal();
     document.getElementById('emptyState').classList.add('hidden');
     updateStatus();
 }
 
 function parsePlacemark(pm, folderId) {
     const name = getKmlText(pm, 'name') || 'Unnamed';
-    
-    // Try LineString first
     let coordsEl = pm.querySelector('LineString coordinates');
     let type = 'line';
-    
-    // Try Point
+    if (!coordsEl) { coordsEl = pm.querySelector('Point coordinates'); type = 'point'; }
     if (!coordsEl) {
-        coordsEl = pm.querySelector('Point coordinates');
-        type = 'point';
-    }
-    
-    // Try MultiGeometry
-    if (!coordsEl) {
-        const multiCoords = pm.querySelectorAll('MultiGeometry LineString coordinates');
-        if (multiCoords.length > 0) {
-            // Combine all linestrings
-            let allCoords = [];
-            multiCoords.forEach(c => {
-                allCoords = allCoords.concat(parseCoordinateString(c.textContent));
-            });
-            if (allCoords.length > 0) {
+        const multi = pm.querySelectorAll('MultiGeometry LineString coordinates');
+        if (multi.length > 0) {
+            let all = [];
+            multi.forEach(c => all = all.concat(parseCoordStr(c.textContent)));
+            if (all.length > 0) {
                 const style = parseStyle(pm);
                 const id = genId();
-                return {
-                    id, name, type: 'line', coords: allCoords,
-                    originalCoords: JSON.parse(JSON.stringify(allCoords)),
+                return { id, name, type: 'line', coords: all, originalCoords: JSON.parse(JSON.stringify(all)),
                     color: style.color, width: style.width, opacity: style.opacity,
-                    visible: true, folderId, leafletLayer: null, vertexMarkers: []
-                };
+                    visible: true, folderId, leafletLayer: null, vertexMarkers: [] };
             }
         }
         return null;
     }
-
-    const coords = parseCoordinateString(coordsEl.textContent);
+    const coords = parseCoordStr(coordsEl.textContent);
     if (coords.length === 0) return null;
-
     const style = parseStyle(pm);
     const id = genId();
-
-    return {
-        id, name, type, coords,
-        originalCoords: JSON.parse(JSON.stringify(coords)),
+    return { id, name, type, coords, originalCoords: JSON.parse(JSON.stringify(coords)),
         color: style.color, width: style.width, opacity: style.opacity,
-        visible: true, folderId, leafletLayer: null, vertexMarkers: []
-    };
+        visible: true, folderId, leafletLayer: null, vertexMarkers: [] };
 }
 
-function parseCoordinateString(str) {
+function parseCoordStr(str) {
     return str.trim().split(/\s+/).map(s => {
-        const parts = s.split(',');
-        if (parts.length >= 2) {
-            return [parseFloat(parts[1]), parseFloat(parts[0])]; // [lat, lng]
-        }
-        return null;
+        const p = s.split(',');
+        return p.length >= 2 ? [parseFloat(p[1]), parseFloat(p[0])] : null;
     }).filter(c => c && !isNaN(c[0]) && !isNaN(c[1]));
 }
 
 function parseStyle(pm) {
-    let color = '#3b82f6';
-    let width = 3;
-    let opacity = 0.9;
-
-    const styleEl = pm.querySelector('Style LineStyle');
-    if (styleEl) {
-        const kmlColor = getKmlText(styleEl, 'color');
-        if (kmlColor && kmlColor.length === 8) {
-            // KML color: aabbggrr
-            const a = parseInt(kmlColor.substr(0, 2), 16) / 255;
-            const b = kmlColor.substr(2, 2);
-            const g = kmlColor.substr(4, 2);
-            const r = kmlColor.substr(6, 2);
-            color = '#' + r + g + b;
-            opacity = Math.round(a * 100) / 100;
+    let color = '#3b82f6', width = 3, opacity = 0.9;
+    const ls = pm.querySelector('Style LineStyle');
+    if (ls) {
+        const kc = getKmlText(ls, 'color');
+        if (kc && kc.length === 8) {
+            opacity = Math.round(parseInt(kc.substr(0, 2), 16) / 255 * 100) / 100;
+            color = '#' + kc.substr(6, 2) + kc.substr(4, 2) + kc.substr(2, 2);
         }
-        const w = getKmlText(styleEl, 'width');
+        const w = getKmlText(ls, 'width');
         if (w) width = parseFloat(w);
     }
-
     return { color, width, opacity };
 }
 
-function getKmlText(parent, tagName) {
-    const el = parent.querySelector(':scope > ' + tagName);
+function getKmlText(parent, tag) {
+    const el = parent.querySelector(':scope > ' + tag);
     return el ? el.textContent.trim() : null;
 }
 
-// === RENDERING ===
-function renderAll() {
-    renderFolderTree();
-    renderMapLayers();
+// === GEOJSON PARSER ===
+function importGeoJSON(jsonStr, fileName) {
+    const data = JSON.parse(jsonStr);
+    const folderId = genFolderId();
+    const folder = { id: folderId, name: fileName.replace(/\.(geojson|json)$/i, ''), expanded: true, items: [] };
+
+    const features = data.type === 'FeatureCollection' ? data.features :
+                     data.type === 'Feature' ? [data] : [];
+
+    features.forEach(f => {
+        if (!f.geometry) return;
+        const geom = f.geometry;
+        const props = f.properties || {};
+        const name = props.name || props.Name || props.title || 'Unnamed';
+        const color = props.stroke || props.color || '#3b82f6';
+        const width = props['stroke-width'] || 3;
+        const opacity = props['stroke-opacity'] || 0.9;
+
+        if (geom.type === 'LineString') {
+            const coords = geom.coordinates.map(c => [c[1], c[0]]);
+            if (coords.length > 0) {
+                const id = genId();
+                folder.items.push(id);
+                projectData.layers[id] = {
+                    id, name, type: 'line', coords,
+                    originalCoords: JSON.parse(JSON.stringify(coords)),
+                    color, width, opacity, visible: true,
+                    folderId, leafletLayer: null, vertexMarkers: []
+                };
+            }
+        } else if (geom.type === 'MultiLineString') {
+            geom.coordinates.forEach((line, i) => {
+                const coords = line.map(c => [c[1], c[0]]);
+                if (coords.length > 0) {
+                    const id = genId();
+                    folder.items.push(id);
+                    projectData.layers[id] = {
+                        id, name: name + (geom.coordinates.length > 1 ? ' #' + (i + 1) : ''),
+                        type: 'line', coords,
+                        originalCoords: JSON.parse(JSON.stringify(coords)),
+                        color, width, opacity, visible: true,
+                        folderId, leafletLayer: null, vertexMarkers: []
+                    };
+                }
+            });
+        } else if (geom.type === 'Point') {
+            const coords = [[geom.coordinates[1], geom.coordinates[0]]];
+            const id = genId();
+            folder.items.push(id);
+            projectData.layers[id] = {
+                id, name, type: 'point', coords,
+                originalCoords: JSON.parse(JSON.stringify(coords)),
+                color, width: 3, opacity, visible: true,
+                folderId, leafletLayer: null, vertexMarkers: []
+            };
+        }
+    });
+
+    projectData.folders.push(folder);
+    renderAll();
+    zoomToAllInternal();
+    document.getElementById('emptyState').classList.add('hidden');
+    updateStatus();
 }
 
+// === RENDERING ===
+function renderAll() { renderFolderTree(); renderMapLayers(); }
+
 function renderMapLayers() {
-    // Clear existing
     Object.values(projectData.layers).forEach(layer => {
-        if (layer.leafletLayer) { map.removeLayer(layer.leafletLayer); }
+        if (layer.leafletLayer) map.removeLayer(layer.leafletLayer);
         layer.vertexMarkers.forEach(m => map.removeLayer(m));
         layer.vertexMarkers = [];
     });
 
-    // Draw
     Object.values(projectData.layers).forEach(layer => {
         if (!layer.visible) return;
         if (layer.type === 'line' && layer.coords.length > 1) {
             layer.leafletLayer = L.polyline(layer.coords, {
-                color: layer.color,
-                weight: layer.width,
-                opacity: layer.opacity,
-                interactive: true
+                color: layer.color, weight: layer.width, opacity: layer.opacity, interactive: true
             }).addTo(map);
-
-            layer.leafletLayer.on('click', () => {
-                selectLayer(layer.id);
-            });
+            layer.leafletLayer.on('click', () => selectLayer(layer.id));
         } else if (layer.type === 'point' && layer.coords.length > 0) {
             layer.leafletLayer = L.circleMarker(layer.coords[0], {
-                radius: 5,
-                color: layer.color,
-                fillColor: layer.color,
-                fillOpacity: layer.opacity,
-                weight: 2
+                radius: 6, color: layer.color, fillColor: layer.color,
+                fillOpacity: layer.opacity, weight: 2
             }).addTo(map);
             layer.leafletLayer.on('click', () => selectLayer(layer.id));
         }
 
-        // Vertex markers if in edit mode and selected
         if (editMode && layer.id === selectedLayerId && layer.type === 'line') {
             renderVertexMarkers(layer);
         }
@@ -1200,46 +1046,41 @@ function renderVertexMarkers(layer) {
     layer.vertexMarkers = [];
 
     layer.coords.forEach((coord, idx) => {
-        const isEndpoint = idx === 0 || idx === layer.coords.length - 1;
+        const isEnd = idx === 0 || idx === layer.coords.length - 1;
         const icon = L.divIcon({
-            className: isEndpoint ? 'vertex-marker-endpoint' : 'vertex-marker',
-            iconSize: isEndpoint ? [12, 12] : [10, 10],
-            iconAnchor: isEndpoint ? [6, 6] : [5, 5]
+            className: isEnd ? 'vertex-marker-endpoint' : 'vertex-marker',
+            iconSize: isEnd ? [12, 12] : [10, 10],
+            iconAnchor: isEnd ? [6, 6] : [5, 5]
         });
 
-        const marker = L.marker(coord, {
-            icon: icon,
-            draggable: true,
-            zIndexOffset: 1000
-        }).addTo(map);
+        const marker = L.marker(coord, { icon, draggable: true, zIndexOffset: 2000 }).addTo(map);
 
+        // Prevent map drag when dragging marker
+        marker.on('mousedown', () => { map.dragging.disable(); });
         marker.on('dragstart', () => {
-            marker.getElement().classList.add('dragging');
+            map.dragging.disable();
+            if (marker.getElement()) marker.getElement().classList.add('dragging');
         });
-
         marker.on('drag', (e) => {
-            const latlng = e.target.getLatLng();
-            layer.coords[idx] = [latlng.lat, latlng.lng];
-            if (layer.leafletLayer) {
-                layer.leafletLayer.setLatLngs(layer.coords);
-            }
+            const ll = e.target.getLatLng();
+            layer.coords[idx] = [ll.lat, ll.lng];
+            if (layer.leafletLayer) layer.leafletLayer.setLatLngs(layer.coords);
         });
-
         marker.on('dragend', (e) => {
-            marker.getElement().classList.remove('dragging');
-            const latlng = e.target.getLatLng();
-            layer.coords[idx] = [latlng.lat, latlng.lng];
+            map.dragging.enable();
+            const ll = e.target.getLatLng();
+            layer.coords[idx] = [ll.lat, ll.lng];
+            if (marker.getElement()) marker.getElement().classList.remove('dragging');
             updateStatus();
         });
-
-        // Right-click to delete vertex
         marker.on('contextmenu', (e) => {
             L.DomEvent.stopPropagation(e);
+            L.DomEvent.preventDefault(e);
             if (layer.coords.length > 2) {
                 layer.coords.splice(idx, 1);
                 renderMapLayers();
-                toast(`Removed vertex ${idx + 1}`, 'info');
-                updateStatus();
+                updatePropsPanel();
+                toast('Removed vertex ' + (idx + 1), 'info');
             }
         });
 
@@ -1251,136 +1092,113 @@ function renderVertexMarkers(layer) {
 function renderFolderTree() {
     const container = document.getElementById('folderTree');
     container.innerHTML = '';
-
-    // Get root folders (those without parentId)
-    const rootFolders = projectData.folders.filter(f => !f.parentId);
-
-    rootFolders.forEach(folder => {
-        container.appendChild(createFolderElement(folder));
+    projectData.folders.filter(f => !f.parentId).forEach(f => {
+        container.appendChild(createFolderEl(f));
     });
 }
 
-function createFolderElement(folder) {
+function createFolderEl(folder) {
     const div = document.createElement('div');
     div.className = 'tree-folder';
     div.dataset.folderId = folder.id;
 
-    // Header
     const header = document.createElement('div');
     header.className = 'tree-folder-header';
-    if (selectedFolderIds.has(folder.id)) header.classList.add('selected');
-    
-    const itemCount = countFolderItems(folder);
-
+    const count = countItems(folder);
     header.innerHTML = `
         <span class="tree-toggle ${folder.expanded ? '' : 'collapsed'}">▼</span>
-        <svg class="tree-folder-icon" viewBox="0 0 24 24" fill="none" stroke="${folder.expanded ? '#f59e0b' : '#64748b'}" stroke-width="2">
-            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-        </svg>
-        <span class="tree-folder-name">${escHtml(folder.name)}</span>
-        <span class="tree-folder-count">${itemCount}</span>
+        <span class="folder-icon">${folder.expanded ? '📂' : '📁'}</span>
+        <span class="tree-folder-name">${esc(folder.name)}</span>
+        <span class="tree-folder-count">${count}</span>
     `;
 
-    header.addEventListener('click', (e) => {
-        if (e.ctrlKey || e.metaKey) {
-            if (selectedFolderIds.has(folder.id)) selectedFolderIds.delete(folder.id);
-            else selectedFolderIds.add(folder.id);
-        } else {
-            folder.expanded = !folder.expanded;
-        }
-        renderFolderTree();
-    });
+    header.addEventListener('click', () => { folder.expanded = !folder.expanded; renderFolderTree(); });
 
-    header.addEventListener('dblclick', () => {
+    header.addEventListener('dblclick', (e) => {
+        e.stopPropagation();
+        const nameSpan = header.querySelector('.tree-folder-name');
         const input = document.createElement('input');
         input.className = 'prop-input';
         input.value = folder.name;
         input.style.cssText = 'width:100%;font-size:12px;';
-        const nameSpan = header.querySelector('.tree-folder-name');
         nameSpan.replaceWith(input);
-        input.focus();
-        input.select();
-        input.addEventListener('blur', () => {
-            folder.name = input.value || folder.name;
-            renderFolderTree();
-        });
-        input.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') input.blur();
-        });
+        input.focus(); input.select();
+        const done = () => { folder.name = input.value || folder.name; renderFolderTree(); };
+        input.addEventListener('blur', done);
+        input.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') input.blur(); });
+    });
+
+    // Folder drag-and-drop target
+    header.addEventListener('dragover', (e) => { e.preventDefault(); header.classList.add('drag-over'); });
+    header.addEventListener('dragleave', () => { header.classList.remove('drag-over'); });
+    header.addEventListener('drop', (e) => {
+        e.preventDefault();
+        header.classList.remove('drag-over');
+        const layerId = e.dataTransfer.getData('text/plain');
+        if (layerId) moveLayerToFolder(layerId, folder.id);
     });
 
     div.appendChild(header);
 
-    // Children container
     const children = document.createElement('div');
-    children.className = `tree-folder-children ${folder.expanded ? '' : 'hidden'}`;
+    children.className = 'tree-folder-children' + (folder.expanded ? '' : ' hidden');
 
     // Sub-folders
-    const subFolders = projectData.folders.filter(f => f.parentId === folder.id);
-    subFolders.forEach(sf => {
-        children.appendChild(createFolderElement(sf));
+    projectData.folders.filter(f => f.parentId === folder.id).forEach(sf => {
+        children.appendChild(createFolderEl(sf));
     });
 
     // Layer items
     folder.items.forEach(itemId => {
-        // Skip if it's a subfolder reference
         if (projectData.folders.find(f => f.id === itemId)) return;
         const layer = projectData.layers[itemId];
         if (!layer) return;
 
         const item = document.createElement('div');
-        item.className = 'tree-item';
-        if (selectedLayerId === layer.id) item.classList.add('selected');
-        item.dataset.layerId = layer.id;
+        item.className = 'tree-item' + (selectedLayerId === layer.id ? ' selected' : '');
         item.draggable = true;
 
+        const typeIcon = layer.type === 'line' ? '━' : '●';
         item.innerHTML = `
             <span class="tree-item-color" style="background:${layer.color}"></span>
-            <span class="tree-item-name">${escHtml(layer.name)}</span>
-            <span class="tree-item-pts">${layer.coords.length}pt</span>
+            <span style="font-size:10px;color:${layer.color};">${typeIcon}</span>
+            <span class="tree-item-name">${esc(layer.name)}</span>
+            <span class="tree-item-pts">${layer.coords.length}</span>
             <span class="tree-item-vis ${layer.visible ? '' : 'hidden-item'}" data-id="${layer.id}">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    ${layer.visible
-                        ? '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>'
-                        : '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>'
-                    }
-                </svg>
+                ${layer.visible
+                    ? '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>'
+                    : '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>'
+                }</svg>
             </span>
         `;
 
         item.addEventListener('click', (e) => {
             if (e.target.closest('.tree-item-vis')) {
-                layer.visible = !layer.visible;
-                renderAll();
-                return;
+                layer.visible = !layer.visible; renderAll(); return;
             }
             selectLayer(layer.id);
         });
 
         item.addEventListener('contextmenu', (e) => {
-            e.preventDefault();
-            ctxTargetId = layer.id;
-            showContextMenu(e.clientX, e.clientY);
+            e.preventDefault(); ctxTargetId = layer.id;
+            showCtxMenu(e.clientX, e.clientY);
         });
 
-        item.addEventListener('dblclick', () => {
+        item.addEventListener('dblclick', (e) => {
+            e.stopPropagation();
             const nameSpan = item.querySelector('.tree-item-name');
             const input = document.createElement('input');
             input.className = 'prop-input';
             input.value = layer.name;
             input.style.cssText = 'flex:1;font-size:11px;';
             nameSpan.replaceWith(input);
-            input.focus();
-            input.select();
-            input.addEventListener('blur', () => {
-                layer.name = input.value || layer.name;
-                renderAll();
-                updatePropsPanel();
-            });
-            input.addEventListener('keydown', (e) => { if (e.key === 'Enter') input.blur(); });
+            input.focus(); input.select();
+            const done = () => { layer.name = input.value || layer.name; renderAll(); updatePropsPanel(); };
+            input.addEventListener('blur', done);
+            input.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') input.blur(); });
         });
 
-        // Drag
         item.addEventListener('dragstart', (e) => {
             e.dataTransfer.setData('text/plain', layer.id);
             e.dataTransfer.effectAllowed = 'move';
@@ -1389,43 +1207,23 @@ function createFolderElement(folder) {
         children.appendChild(item);
     });
 
-    // Drop target
-    children.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        header.classList.add('drag-over');
-    });
-    children.addEventListener('dragleave', () => {
-        header.classList.remove('drag-over');
-    });
-    children.addEventListener('drop', (e) => {
-        e.preventDefault();
-        header.classList.remove('drag-over');
-        const layerId = e.dataTransfer.getData('text/plain');
-        moveLayerToFolder(layerId, folder.id);
-    });
-
     div.appendChild(children);
     return div;
 }
 
-function countFolderItems(folder) {
-    let count = folder.items.filter(id => projectData.layers[id]).length;
-    const subFolders = projectData.folders.filter(f => f.parentId === folder.id);
-    subFolders.forEach(sf => count += countFolderItems(sf));
-    return count;
+function countItems(folder) {
+    let c = folder.items.filter(id => projectData.layers[id]).length;
+    projectData.folders.filter(f => f.parentId === folder.id).forEach(sf => c += countItems(sf));
+    return c;
 }
 
-function moveLayerToFolder(layerId, targetFolderId) {
-    // Remove from old folder
-    projectData.folders.forEach(f => {
-        f.items = f.items.filter(id => id !== layerId);
-    });
-    // Add to new folder
-    const target = projectData.folders.find(f => f.id === targetFolderId);
+function moveLayerToFolder(layerId, targetId) {
+    projectData.folders.forEach(f => { f.items = f.items.filter(id => id !== layerId); });
+    const target = projectData.folders.find(f => f.id === targetId);
     if (target) {
         target.items.push(layerId);
         const layer = projectData.layers[layerId];
-        if (layer) layer.folderId = targetFolderId;
+        if (layer) layer.folderId = targetId;
     }
     renderFolderTree();
     toast('Layer moved', 'info');
@@ -1441,543 +1239,357 @@ function selectLayer(id) {
 
 function updatePropsPanel() {
     const layer = projectData.layers[selectedLayerId];
+    const show = (id, v) => document.getElementById(id).style.display = v ? '' : 'none';
     if (!layer) {
-        document.getElementById('propNone').style.display = '';
-        document.getElementById('propName').style.display = 'none';
-        document.getElementById('propStyle').style.display = 'none';
-        document.getElementById('propSimplify').style.display = 'none';
-        document.getElementById('propActions').style.display = 'none';
+        show('propNone', true); show('propName', false); show('propStyle', false);
+        show('propSimplify', false); show('propActions', false);
         return;
     }
-
-    document.getElementById('propNone').style.display = 'none';
-    document.getElementById('propName').style.display = '';
-    document.getElementById('propStyle').style.display = '';
-    document.getElementById('propSimplify').style.display = layer.type === 'line' ? '' : 'none';
-    document.getElementById('propActions').style.display = '';
+    show('propNone', false); show('propName', true); show('propStyle', true);
+    show('propSimplify', layer.type === 'line'); show('propActions', true);
 
     document.getElementById('propNameInput').value = layer.name;
-    document.getElementById('propPointCount').textContent = `${layer.coords.length} vertices`;
+    document.getElementById('propPointCount').textContent = layer.coords.length + ' vertices';
+    document.getElementById('propType').textContent = layer.type === 'line' ? 'LineString' : 'Point';
     document.getElementById('propColor').value = layer.color;
     document.getElementById('propWidth').value = layer.width;
     document.getElementById('propWidthVal').textContent = layer.width;
     document.getElementById('propOpacity').value = layer.opacity;
     document.getElementById('propOpacityVal').textContent = layer.opacity;
-
-    if (layer.type === 'line') {
-        previewSimplify(document.getElementById('propTolerance').value);
-    }
+    if (layer.type === 'line') previewSimplify(document.getElementById('propTolerance').value);
 }
 
 // === PROPERTY UPDATES ===
-function updateSelectedName(val) {
-    const layer = projectData.layers[selectedLayerId];
-    if (layer) { layer.name = val; renderFolderTree(); }
-}
+window.updateSelectedName = (v) => { const l = projectData.layers[selectedLayerId]; if (l) { l.name = v; renderFolderTree(); } };
+window.updateSelectedColor = (v) => { const l = projectData.layers[selectedLayerId]; if (l) { l.color = v; renderMapLayers(); renderFolderTree(); } };
+window.updateSelectedWidth = (v) => {
+    const l = projectData.layers[selectedLayerId]; if (!l) return;
+    l.width = parseFloat(v); document.getElementById('propWidthVal').textContent = v;
+    if (l.leafletLayer) l.leafletLayer.setStyle({ weight: l.width });
+};
+window.updateSelectedOpacity = (v) => {
+    const l = projectData.layers[selectedLayerId]; if (!l) return;
+    l.opacity = parseFloat(v); document.getElementById('propOpacityVal').textContent = v;
+    if (l.leafletLayer) l.leafletLayer.setStyle({ opacity: l.opacity });
+};
 
-function updateSelectedColor(val) {
-    const layer = projectData.layers[selectedLayerId];
-    if (layer) { layer.color = val; renderMapLayers(); renderFolderTree(); }
-}
-
-function updateSelectedWidth(val) {
-    const layer = projectData.layers[selectedLayerId];
-    if (layer) {
-        layer.width = parseFloat(val);
-        document.getElementById('propWidthVal').textContent = val;
-        if (layer.leafletLayer) layer.leafletLayer.setStyle({ weight: layer.width });
+// === SIMPLIFICATION ===
+function douglasPeucker(pts, tol) {
+    if (pts.length <= 2) return pts;
+    let maxD = 0, maxI = 0;
+    for (let i = 1; i < pts.length - 1; i++) {
+        const d = perpDist(pts[i], pts[0], pts[pts.length - 1]);
+        if (d > maxD) { maxD = d; maxI = i; }
     }
-}
-
-function updateSelectedOpacity(val) {
-    const layer = projectData.layers[selectedLayerId];
-    if (layer) {
-        layer.opacity = parseFloat(val);
-        document.getElementById('propOpacityVal').textContent = val;
-        if (layer.leafletLayer) layer.leafletLayer.setStyle({ opacity: layer.opacity });
-    }
-}
-
-// === SIMPLIFICATION (Douglas-Peucker) ===
-function douglasPeucker(points, tolerance) {
-    if (points.length <= 2) return points;
-
-    let maxDist = 0;
-    let maxIdx = 0;
-    const first = points[0];
-    const last = points[points.length - 1];
-
-    for (let i = 1; i < points.length - 1; i++) {
-        const d = perpendicularDist(points[i], first, last);
-        if (d > maxDist) {
-            maxDist = d;
-            maxIdx = i;
-        }
-    }
-
-    if (maxDist > tolerance) {
-        const left = douglasPeucker(points.slice(0, maxIdx + 1), tolerance);
-        const right = douglasPeucker(points.slice(maxIdx), tolerance);
+    if (maxD > tol) {
+        const left = douglasPeucker(pts.slice(0, maxI + 1), tol);
+        const right = douglasPeucker(pts.slice(maxI), tol);
         return left.slice(0, -1).concat(right);
     }
-
-    return [first, last];
+    return [pts[0], pts[pts.length - 1]];
 }
 
-function perpendicularDist(point, lineStart, lineEnd) {
-    const dx = lineEnd[1] - lineStart[1];
-    const dy = lineEnd[0] - lineStart[0];
+function perpDist(p, a, b) {
+    const dx = b[1] - a[1], dy = b[0] - a[0];
     const mag = Math.sqrt(dx * dx + dy * dy);
-    if (mag === 0) return Math.sqrt(Math.pow(point[0] - lineStart[0], 2) + Math.pow(point[1] - lineStart[1], 2));
-    const u = ((point[1] - lineStart[1]) * dx + (point[0] - lineStart[0]) * dy) / (mag * mag);
-    const closestX = lineStart[1] + u * dx;
-    const closestY = lineStart[0] + u * dy;
-    return Math.sqrt(Math.pow(point[0] - closestY, 2) + Math.pow(point[1] - closestX, 2));
+    if (mag === 0) return Math.sqrt((p[0] - a[0]) ** 2 + (p[1] - a[1]) ** 2);
+    const u = ((p[1] - a[1]) * dx + (p[0] - a[0]) * dy) / (mag * mag);
+    return Math.sqrt((p[0] - (a[0] + u * dy)) ** 2 + (p[1] - (a[1] + u * dx)) ** 2);
 }
 
-function previewSimplify(tolerance) {
-    tolerance = parseFloat(tolerance);
-    document.getElementById('propToleranceVal').textContent = tolerance.toFixed(4);
-    
-    const layer = projectData.layers[selectedLayerId];
-    if (!layer || layer.type !== 'line') return;
-
-    const simplified = douglasPeucker(layer.coords, tolerance);
-    const origCount = layer.originalCoords.length;
-    const newCount = simplified.length;
-    const reduction = ((1 - newCount / layer.coords.length) * 100).toFixed(1);
-
+window.previewSimplify = function(tol) {
+    tol = parseFloat(tol);
+    document.getElementById('propToleranceVal').textContent = tol.toFixed(4);
+    const l = projectData.layers[selectedLayerId];
+    if (!l || l.type !== 'line') return;
+    const simp = douglasPeucker(l.coords, tol);
+    const pct = ((1 - simp.length / l.coords.length) * 100).toFixed(1);
     document.getElementById('simplifyPreview').innerHTML =
-        `Original: ${origCount} pts<br>Current: ${layer.coords.length} pts<br>After: ${newCount} pts (${reduction}% reduction)`;
-}
+        `Original: ${l.originalCoords.length} → Current: ${l.coords.length} → After: ${simp.length} pts (−${pct}%)`;
+};
 
-function applySimplify() {
-    const layer = projectData.layers[selectedLayerId];
-    if (!layer || layer.type !== 'line') return;
+window.applySimplify = function() {
+    const l = projectData.layers[selectedLayerId];
+    if (!l || l.type !== 'line') return;
+    const tol = parseFloat(document.getElementById('propTolerance').value);
+    l.coords = douglasPeucker(l.coords, tol);
+    renderAll(); updatePropsPanel();
+    toast('Simplified to ' + l.coords.length + ' points', 'success');
+};
 
-    const tolerance = parseFloat(document.getElementById('propTolerance').value);
-    layer.coords = douglasPeucker(layer.coords, tolerance);
-    renderAll();
-    updatePropsPanel();
-    toast(`Simplified to ${layer.coords.length} points`, 'success');
-    updateStatus();
-}
-
-function undoSimplify() {
-    const layer = projectData.layers[selectedLayerId];
-    if (!layer) return;
-    layer.coords = JSON.parse(JSON.stringify(layer.originalCoords));
-    renderAll();
-    updatePropsPanel();
+window.undoSimplify = function() {
+    const l = projectData.layers[selectedLayerId]; if (!l) return;
+    l.coords = JSON.parse(JSON.stringify(l.originalCoords));
+    renderAll(); updatePropsPanel();
     toast('Restored original coordinates', 'info');
-    updateStatus();
-}
+};
 
 // === EDIT MODE ===
-function toggleEditMode() {
+window.toggleEditMode = function() {
     editMode = !editMode;
     addPointMode = false;
     document.getElementById('btnEditMode').classList.toggle('active', editMode);
-    document.getElementById('btnAddPoint').classList.toggle('active', false);
+    document.getElementById('btnAddPoint').classList.remove('active');
+    document.getElementById('editBanner').classList.toggle('show', editMode);
     renderMapLayers();
-    toast(editMode ? 'Edit mode ON — drag vertices to move them' : 'Edit mode OFF', 'info');
-}
+    toast(editMode ? 'Edit mode ON' : 'Edit mode OFF', 'info');
+};
 
-function toggleAddPointMode() {
+window.toggleAddPointMode = function() {
     addPointMode = !addPointMode;
-    if (addPointMode) editMode = true;
+    if (addPointMode) { editMode = true; document.getElementById('btnEditMode').classList.add('active'); document.getElementById('editBanner').classList.add('show'); }
     document.getElementById('btnAddPoint').classList.toggle('active', addPointMode);
-    document.getElementById('btnEditMode').classList.toggle('active', editMode);
-    
     if (addPointMode && !selectedLayerId) {
         toast('Select a line layer first', 'error');
-        addPointMode = false;
-        document.getElementById('btnAddPoint').classList.remove('active');
+        addPointMode = false; document.getElementById('btnAddPoint').classList.remove('active');
         return;
     }
-    
-    toast(addPointMode ? 'Click on map to add points to selected line' : 'Add point mode OFF', 'info');
-}
+    toast(addPointMode ? 'Click on map to add vertices' : 'Add point mode OFF', 'info');
+};
 
 map.on('click', (e) => {
     if (!addPointMode) return;
-    const layer = projectData.layers[selectedLayerId];
-    if (!layer || layer.type !== 'line') return;
-
-    // Find nearest segment and insert
-    let minDist = Infinity;
-    let insertIdx = layer.coords.length;
-
-    for (let i = 0; i < layer.coords.length - 1; i++) {
-        const d = distToSegment([e.latlng.lat, e.latlng.lng], layer.coords[i], layer.coords[i + 1]);
-        if (d < minDist) {
-            minDist = d;
-            insertIdx = i + 1;
-        }
+    const l = projectData.layers[selectedLayerId];
+    if (!l || l.type !== 'line') return;
+    let minD = Infinity, ins = l.coords.length;
+    for (let i = 0; i < l.coords.length - 1; i++) {
+        const d = distToSeg([e.latlng.lat, e.latlng.lng], l.coords[i], l.coords[i + 1]);
+        if (d < minD) { minD = d; ins = i + 1; }
     }
-
-    layer.coords.splice(insertIdx, 0, [e.latlng.lat, e.latlng.lng]);
-    renderMapLayers();
-    updatePropsPanel();
-    updateStatus();
+    l.coords.splice(ins, 0, [e.latlng.lat, e.latlng.lng]);
+    renderMapLayers(); updatePropsPanel(); updateStatus();
 });
 
-function distToSegment(p, a, b) {
-    const dx = b[1] - a[1], dy = b[0] - a[0];
-    const lenSq = dx * dx + dy * dy;
-    if (lenSq === 0) return Math.sqrt(Math.pow(p[0] - a[0], 2) + Math.pow(p[1] - a[1], 2));
-    let t = ((p[1] - a[1]) * dx + (p[0] - a[0]) * dy) / lenSq;
-    t = Math.max(0, Math.min(1, t));
-    return Math.sqrt(Math.pow(p[0] - (a[0] + t * dy), 2) + Math.pow(p[1] - (a[1] + t * dx), 2));
+function distToSeg(p, a, b) {
+    const dx = b[1] - a[1], dy = b[0] - a[0], len = dx * dx + dy * dy;
+    if (len === 0) return Math.sqrt((p[0] - a[0]) ** 2 + (p[1] - a[1]) ** 2);
+    let t = Math.max(0, Math.min(1, ((p[1] - a[1]) * dx + (p[0] - a[0]) * dy) / len));
+    return Math.sqrt((p[0] - (a[0] + t * dy)) ** 2 + (p[1] - (a[1] + t * dx)) ** 2);
 }
 
-// === FOLDER MANAGEMENT ===
-function createNewFolder() {
-    const folderId = genFolderId();
-    projectData.folders.push({ id: folderId, name: 'New Folder', expanded: true, items: [] });
-    renderFolderTree();
-    toast('Created new folder', 'info');
-}
+// === FOLDER OPS ===
+window.createNewFolder = function() {
+    projectData.folders.push({ id: genFolderId(), name: 'New Folder', expanded: true, items: [] });
+    renderFolderTree(); toast('Created folder', 'info');
+};
 
-function selectAllItems() {
-    const allIds = Object.keys(projectData.layers);
-    if (allIds.length > 0) {
-        selectLayer(allIds[0]); // Select first for props panel
-    }
-}
+window.expandAllFolders = () => { projectData.folders.forEach(f => f.expanded = true); renderFolderTree(); };
+window.collapseAllFolders = () => { projectData.folders.forEach(f => f.expanded = false); renderFolderTree(); };
+
+window.selectAllItems = function() {
+    const ids = Object.keys(projectData.layers);
+    if (ids.length) selectLayer(ids[0]);
+};
+window.deselectAll = function() { selectedLayerId = null; renderAll(); updatePropsPanel(); };
 
 // === CONTEXT MENU ===
-function showContextMenu(x, y) {
-    const menu = document.getElementById('ctxMenu');
-    menu.style.left = x + 'px';
-    menu.style.top = y + 'px';
-    menu.classList.add('show');
+function showCtxMenu(x, y) {
+    const m = document.getElementById('ctxMenu');
+    m.style.left = x + 'px'; m.style.top = y + 'px';
+    m.classList.add('show');
 }
 
-document.addEventListener('click', () => {
-    document.getElementById('ctxMenu').classList.remove('show');
-});
+document.addEventListener('click', () => { document.getElementById('ctxMenu').classList.remove('show'); closeMenus(); });
 
-function ctxRename() {
-    const layer = projectData.layers[ctxTargetId];
-    if (!layer) return;
-    const name = prompt('Rename layer:', layer.name);
-    if (name) { layer.name = name; renderAll(); updatePropsPanel(); }
-}
-
-function ctxDuplicate() {
-    duplicateLayer(ctxTargetId);
-}
-
-function ctxZoomTo() {
-    const layer = projectData.layers[ctxTargetId];
-    if (layer && layer.leafletLayer) {
-        map.fitBounds(layer.leafletLayer.getBounds(), { padding: [40, 40] });
-    }
-}
-
-function ctxMoveToFolder() {
+window.ctxRename = function() {
+    const l = projectData.layers[ctxTargetId]; if (!l) return;
+    const n = prompt('Rename:', l.name);
+    if (n) { l.name = n; renderAll(); updatePropsPanel(); }
+};
+window.ctxDuplicate = () => duplicateLayer(ctxTargetId);
+window.ctxZoomTo = function() {
+    const l = projectData.layers[ctxTargetId];
+    if (l && l.leafletLayer && l.leafletLayer.getBounds) map.fitBounds(l.leafletLayer.getBounds(), { padding: [40, 40] });
+};
+window.ctxMoveToFolder = function() {
     const folders = projectData.folders.filter(f => !f.parentId);
-    const names = folders.map(f => f.name);
-    const choice = prompt('Move to folder:\n' + names.map((n, i) => `${i + 1}. ${n}`).join('\n') + '\n\nEnter number:');
+    const choice = prompt('Move to folder:\n' + folders.map((f, i) => (i + 1) + '. ' + f.name).join('\n') + '\n\nEnter number:');
     if (choice) {
         const idx = parseInt(choice) - 1;
-        if (idx >= 0 && idx < folders.length) {
-            moveLayerToFolder(ctxTargetId, folders[idx].id);
-        }
+        if (idx >= 0 && idx < folders.length) moveLayerToFolder(ctxTargetId, folders[idx].id);
     }
-}
-
-function ctxDelete() {
-    deleteLayer(ctxTargetId);
-}
+};
+window.ctxDelete = () => deleteLayer(ctxTargetId);
 
 // === ACTIONS ===
-function zoomToSelected() {
-    const layer = projectData.layers[selectedLayerId];
-    if (layer && layer.leafletLayer) {
-        map.fitBounds(layer.leafletLayer.getBounds(), { padding: [40, 40] });
-    }
-}
+window.zoomToSelected = function() {
+    const l = projectData.layers[selectedLayerId];
+    if (l && l.leafletLayer && l.leafletLayer.getBounds) map.fitBounds(l.leafletLayer.getBounds(), { padding: [40, 40] });
+};
 
-function zoomToAll() {
-    const allCoords = [];
-    Object.values(projectData.layers).forEach(l => {
-        l.coords.forEach(c => allCoords.push(c));
-    });
-    if (allCoords.length > 0) {
-        map.fitBounds(L.latLngBounds(allCoords), { padding: [40, 40] });
-    }
+function zoomToAllInternal() {
+    const all = [];
+    Object.values(projectData.layers).forEach(l => l.coords.forEach(c => all.push(c)));
+    if (all.length) map.fitBounds(L.latLngBounds(all), { padding: [40, 40] });
 }
+window.zoomToAll = zoomToAllInternal;
 
-function duplicateSelected() {
-    duplicateLayer(selectedLayerId);
-}
+window.duplicateSelected = () => duplicateLayer(selectedLayerId);
 
 function duplicateLayer(id) {
-    const layer = projectData.layers[id];
-    if (!layer) return;
-    const newId = genId();
-    const newLayer = {
-        ...layer,
-        id: newId,
-        name: layer.name + ' (copy)',
-        coords: JSON.parse(JSON.stringify(layer.coords)),
-        originalCoords: JSON.parse(JSON.stringify(layer.originalCoords)),
-        leafletLayer: null,
-        vertexMarkers: []
-    };
-    projectData.layers[newId] = newLayer;
-    const folder = projectData.folders.find(f => f.id === layer.folderId);
-    if (folder) folder.items.push(newId);
-    renderAll();
-    toast('Layer duplicated', 'info');
+    const l = projectData.layers[id]; if (!l) return;
+    const nid = genId();
+    projectData.layers[nid] = { ...l, id: nid, name: l.name + ' (copy)',
+        coords: JSON.parse(JSON.stringify(l.coords)),
+        originalCoords: JSON.parse(JSON.stringify(l.originalCoords)),
+        leafletLayer: null, vertexMarkers: [] };
+    const f = projectData.folders.find(f => f.id === l.folderId);
+    if (f) f.items.push(nid);
+    renderAll(); toast('Duplicated', 'info');
 }
 
-function deleteSelected() {
-    deleteLayer(selectedLayerId);
-}
+window.deleteSelected = () => deleteLayer(selectedLayerId);
 
 function deleteLayer(id) {
-    const layer = projectData.layers[id];
-    if (!layer) return;
-    if (layer.leafletLayer) map.removeLayer(layer.leafletLayer);
-    layer.vertexMarkers.forEach(m => map.removeLayer(m));
+    const l = projectData.layers[id]; if (!l) return;
+    if (l.leafletLayer) map.removeLayer(l.leafletLayer);
+    l.vertexMarkers.forEach(m => map.removeLayer(m));
     delete projectData.layers[id];
-    projectData.folders.forEach(f => {
-        f.items = f.items.filter(i => i !== id);
-    });
+    projectData.folders.forEach(f => { f.items = f.items.filter(i => i !== id); });
     if (selectedLayerId === id) selectedLayerId = null;
-    renderAll();
-    updatePropsPanel();
-    toast('Layer deleted', 'info');
-    updateStatus();
+    renderAll(); updatePropsPanel(); toast('Deleted', 'info'); updateStatus();
 }
 
-// === EXPORT: KML ===
-function saveKML() {
-    const kml = buildKML();
-    downloadFile(kml, 'neximap_export.kml', 'application/vnd.google-earth.kml+xml');
+window.clearProject = function() {
+    if (!confirm('Clear all layers and folders?')) return;
+    Object.values(projectData.layers).forEach(l => {
+        if (l.leafletLayer) map.removeLayer(l.leafletLayer);
+        l.vertexMarkers.forEach(m => map.removeLayer(m));
+    });
+    projectData = { folders: [], layers: {} };
+    selectedLayerId = null;
+    renderAll(); updatePropsPanel();
+    document.getElementById('emptyState').classList.remove('hidden');
+    updateStatus(); toast('Cleared', 'info');
+};
+
+// === EXPORT KML ===
+window.saveKML = function() {
+    downloadFile(buildKML(), 'neximap_export.kml', 'application/vnd.google-earth.kml+xml');
     toast('KML saved', 'success');
-}
+};
 
 function buildKML() {
-    let kml = '<?xml version="1.0" encoding="UTF-8"?>\n';
-    kml += '<kml xmlns="http://www.opengis.net/kml/2.2">\n<Document>\n';
-    kml += `  <name>NexiMap KML Studio Export</name>\n`;
-
-    const rootFolders = projectData.folders.filter(f => !f.parentId);
-    rootFolders.forEach(folder => {
-        kml += buildKMLFolder(folder, '  ');
-    });
-
-    kml += '</Document>\n</kml>';
-    return kml;
+    let k = '<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n<Document>\n';
+    k += '  <name>NexiMap KML Studio Export</name>\n';
+    projectData.folders.filter(f => !f.parentId).forEach(f => { k += buildKMLFolder(f, '  '); });
+    k += '</Document>\n</kml>';
+    return k;
 }
 
-function buildKMLFolder(folder, indent) {
-    let kml = `${indent}<Folder>\n`;
-    kml += `${indent}  <name>${escXml(folder.name)}</name>\n`;
-
-    // Sub-folders
-    const subFolders = projectData.folders.filter(f => f.parentId === folder.id);
-    subFolders.forEach(sf => {
-        kml += buildKMLFolder(sf, indent + '  ');
+function buildKMLFolder(folder, ind) {
+    let k = ind + '<Folder>\n' + ind + '  <name>' + escXml(folder.name) + '</name>\n';
+    projectData.folders.filter(f => f.parentId === folder.id).forEach(sf => { k += buildKMLFolder(sf, ind + '  '); });
+    folder.items.forEach(id => {
+        if (projectData.folders.find(f => f.id === id)) return;
+        const l = projectData.layers[id]; if (!l) return;
+        k += buildPM(l, ind + '  ');
     });
-
-    // Layers
-    folder.items.forEach(itemId => {
-        if (projectData.folders.find(f => f.id === itemId)) return;
-        const layer = projectData.layers[itemId];
-        if (!layer) return;
-        kml += buildKMLPlacemark(layer, indent + '  ');
-    });
-
-    kml += `${indent}</Folder>\n`;
-    return kml;
+    k += ind + '</Folder>\n';
+    return k;
 }
 
-function buildKMLPlacemark(layer, indent) {
-    let kml = `${indent}<Placemark>\n`;
-    kml += `${indent}  <name>${escXml(layer.name)}</name>\n`;
-
-    // Style
-    const a = Math.round(layer.opacity * 255).toString(16).padStart(2, '0');
-    const r = layer.color.substr(1, 2);
-    const g = layer.color.substr(3, 2);
-    const b = layer.color.substr(5, 2);
-    const kmlColor = a + b + g + r;
-
-    kml += `${indent}  <Style><LineStyle>\n`;
-    kml += `${indent}    <color>${kmlColor}</color>\n`;
-    kml += `${indent}    <width>${layer.width}</width>\n`;
-    kml += `${indent}  </LineStyle></Style>\n`;
-
-    if (layer.type === 'line') {
-        kml += `${indent}  <LineString>\n`;
-        kml += `${indent}    <coordinates>\n`;
-        layer.coords.forEach(c => {
-            kml += `${indent}      ${c[1]},${c[0]},0\n`; // lng,lat,alt
-        });
-        kml += `${indent}    </coordinates>\n`;
-        kml += `${indent}  </LineString>\n`;
-    } else if (layer.type === 'point') {
-        kml += `${indent}  <Point>\n`;
-        kml += `${indent}    <coordinates>${layer.coords[0][1]},${layer.coords[0][0]},0</coordinates>\n`;
-        kml += `${indent}  </Point>\n`;
+function buildPM(l, ind) {
+    const a = Math.round(l.opacity * 255).toString(16).padStart(2, '0');
+    const r = l.color.substr(1, 2), g = l.color.substr(3, 2), b = l.color.substr(5, 2);
+    let k = ind + '<Placemark>\n' + ind + '  <name>' + escXml(l.name) + '</name>\n';
+    k += ind + '  <Style><LineStyle><color>' + a + b + g + r + '</color><width>' + l.width + '</width></LineStyle></Style>\n';
+    if (l.type === 'line') {
+        k += ind + '  <LineString><coordinates>\n';
+        l.coords.forEach(c => { k += ind + '    ' + c[1] + ',' + c[0] + ',0\n'; });
+        k += ind + '  </coordinates></LineString>\n';
+    } else {
+        k += ind + '  <Point><coordinates>' + l.coords[0][1] + ',' + l.coords[0][0] + ',0</coordinates></Point>\n';
     }
-
-    kml += `${indent}</Placemark>\n`;
-    return kml;
+    k += ind + '</Placemark>\n';
+    return k;
 }
 
-// === EXPORT: SIMPLIFIED GEOJSON ===
-function exportSimplifiedGeoJSON() {
+// === EXPORT GEOJSON ===
+window.exportSimplifiedGeoJSON = function() {
     const features = [];
-    let totalOriginal = 0;
-    let totalSimplified = 0;
-
-    Object.values(projectData.layers).forEach(layer => {
-        if (layer.type !== 'line') return; // Only LineStrings
-        totalOriginal += layer.originalCoords.length;
-        totalSimplified += layer.coords.length;
-
+    Object.values(projectData.layers).forEach(l => {
+        if (l.type !== 'line') return;
         features.push({
             type: 'Feature',
-            properties: {
-                name: layer.name,
-                stroke: layer.color,
-                'stroke-width': layer.width,
-                'stroke-opacity': layer.opacity,
-                originalPoints: layer.originalCoords.length,
-                simplifiedPoints: layer.coords.length
-            },
-            geometry: {
-                type: 'LineString',
-                coordinates: layer.coords.map(c => [c[1], c[0]]) // GeoJSON: [lng, lat]
-            }
+            properties: { name: l.name, stroke: l.color, 'stroke-width': l.width, 'stroke-opacity': l.opacity,
+                originalPoints: l.originalCoords.length, simplifiedPoints: l.coords.length },
+            geometry: { type: 'LineString', coordinates: l.coords.map(c => [c[1], c[0]]) }
         });
     });
-
-    if (features.length === 0) {
-        toast('No line layers to export', 'error');
-        return;
-    }
-
-    const geojson = {
-        type: 'FeatureCollection',
-        properties: {
-            generator: 'NexiMap KML Studio v1.0',
-            exportDate: new Date().toISOString(),
-            totalFeatures: features.length,
-            totalOriginalPoints: totalOriginal,
-            totalSimplifiedPoints: totalSimplified
-        },
-        features: features
-    };
-
-    const fileName = `Simplified_GeoJSON_${getProjectName()}.geojson`;
-    downloadFile(JSON.stringify(geojson, null, 2), fileName, 'application/geo+json');
-    toast(`Exported ${features.length} lines as simplified GeoJSON`, 'success');
-}
+    if (!features.length) { toast('No lines to export', 'error'); return; }
+    const gj = { type: 'FeatureCollection',
+        properties: { generator: 'NexiMap KML Studio v1.1', exportDate: new Date().toISOString() },
+        features };
+    const name = 'Simplified_GeoJSON_' + getProjectName() + '.geojson';
+    downloadFile(JSON.stringify(gj, null, 2), name, 'application/geo+json');
+    toast('Exported ' + features.length + ' lines as GeoJSON', 'success');
+};
 
 function getProjectName() {
-    const rootFolders = projectData.folders.filter(f => !f.parentId);
-    if (rootFolders.length === 1) return rootFolders[0].name.replace(/[^a-zA-Z0-9_-]/g, '_');
-    if (rootFolders.length > 1) return 'merged_' + rootFolders.length + '_files';
-    return 'export';
+    const rf = projectData.folders.filter(f => !f.parentId);
+    if (rf.length === 1) return rf[0].name.replace(/[^a-zA-Z0-9_-]/g, '_');
+    return rf.length > 1 ? 'merged_' + rf.length : 'export';
 }
+
+// === MENUS ===
+window.toggleMenu = function(id) {
+    const m = document.getElementById(id);
+    const wasOpen = m.classList.contains('show');
+    closeMenus();
+    if (!wasOpen) { m.classList.add('show'); event.stopPropagation(); }
+};
+window.closeMenus = function() {
+    document.querySelectorAll('.menu-dropdown').forEach(m => m.classList.remove('show'));
+};
+
+// === KEYBOARD SHORTCUTS ===
+document.addEventListener('keydown', (e) => {
+    if (e.ctrlKey && e.key === 'o') { e.preventDefault(); openKMLFile(); }
+    if (e.ctrlKey && e.key === 's') { e.preventDefault(); saveKML(); }
+    if (e.key === 'Delete' && selectedLayerId) { deleteSelected(); }
+    if (e.key === 'Escape') { if (editMode) toggleEditMode(); if (addPointMode) toggleAddPointMode(); }
+});
 
 // === UTILS ===
-function downloadFile(content, filename, mimeType) {
-    const blob = new Blob([content], { type: mimeType });
-    const url = URL.createObjectURL(blob);
+function downloadFile(content, filename, mime) {
     const a = document.createElement('a');
-    a.href = url;
+    a.href = URL.createObjectURL(new Blob([content], { type: mime }));
     a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
 }
+function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+function escXml(s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 
-function escHtml(s) {
-    const d = document.createElement('div');
-    d.textContent = s;
-    return d.innerHTML;
-}
-
-function escXml(s) {
-    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
-function toast(msg, type = 'info') {
-    const container = document.getElementById('toastContainer');
+function toast(msg, type) {
+    const c = document.getElementById('toastContainer');
     const t = document.createElement('div');
-    t.className = `toast ${type}`;
+    t.className = 'toast ' + (type || 'info');
     t.textContent = msg;
-    container.appendChild(t);
-    setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 300); }, 3000);
+    c.appendChild(t);
+    setTimeout(() => { t.style.opacity = '0'; t.style.transition = 'opacity 0.3s'; setTimeout(() => t.remove(), 300); }, 3000);
 }
 
 function updateStatus() {
-    const layerCount = Object.keys(projectData.layers).length;
-    const totalPts = Object.values(projectData.layers).reduce((sum, l) => sum + l.coords.length, 0);
-    document.getElementById('statusText').textContent = `${layerCount} layers · ${totalPts.toLocaleString()} vertices`;
+    const lc = Object.keys(projectData.layers).length;
+    const tp = Object.values(projectData.layers).reduce((s, l) => s + l.coords.length, 0);
+    document.getElementById('statusText').textContent = lc + ' layers · ' + tp.toLocaleString() + ' vertices';
 }
 
-// === RESIZE HANDLE ===
+// Resize handle
 const leftResize = document.getElementById('leftResize');
-let resizing = false;
-leftResize.addEventListener('mousedown', (e) => {
-    resizing = true;
-    leftResize.classList.add('active');
-    document.addEventListener('mousemove', onResize);
-    document.addEventListener('mouseup', () => {
-        resizing = false;
-        leftResize.classList.remove('active');
-        document.removeEventListener('mousemove', onResize);
-        map.invalidateSize();
-    }, { once: true });
+leftResize.addEventListener('mousedown', () => {
+    const onMove = (e) => {
+        document.getElementById('leftPanel').style.width = Math.max(180, Math.min(400, e.clientX)) + 'px';
+    };
+    const onUp = () => { document.removeEventListener('mousemove', onMove); map.invalidateSize(); };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp, { once: true });
 });
 
-function onResize(e) {
-    const panel = document.getElementById('leftPanel');
-    const newWidth = Math.max(200, Math.min(450, e.clientX));
-    panel.style.width = newWidth + 'px';
-}
-
-// Init
 updateStatus();
 
-// Expose functions to global scope for onclick handlers
-window.openKMLFile = openKMLFile;
-window.openMergeFiles = openMergeFiles;
-window.handleFileOpen = handleFileOpen;
-window.handleMergeFiles = handleMergeFiles;
-window.saveKML = saveKML;
-window.exportSimplifiedGeoJSON = exportSimplifiedGeoJSON;
-window.toggleEditMode = toggleEditMode;
-window.toggleAddPointMode = toggleAddPointMode;
-window.createNewFolder = createNewFolder;
-window.selectAllItems = selectAllItems;
-window.updateSelectedName = updateSelectedName;
-window.updateSelectedColor = updateSelectedColor;
-window.updateSelectedWidth = updateSelectedWidth;
-window.updateSelectedOpacity = updateSelectedOpacity;
-window.previewSimplify = previewSimplify;
-window.applySimplify = applySimplify;
-window.undoSimplify = undoSimplify;
-window.zoomToSelected = zoomToSelected;
-window.duplicateSelected = duplicateSelected;
-window.deleteSelected = deleteSelected;
-window.ctxRename = ctxRename;
-window.ctxDuplicate = ctxDuplicate;
-window.ctxZoomTo = ctxZoomTo;
-window.ctxMoveToFolder = ctxMoveToFolder;
-window.ctxDelete = ctxDelete;
-
-})(); // end async init
+} // end initApp
 </script>
 </body>
 </html>
