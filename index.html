@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<!-- NexiMap KML Studio v2.9 - Node-based topology graph with Dijkstra shortest path -->
+<!-- NexiMap KML Studio v2.9.2 - Toggle properties panel visibility with toolbar button -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NexiMap KML Studio v2.9</title>
+<title>NexiMap KML Studio v2.9.2</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='2' width='28' height='28' rx='4' fill='%230096D6'/%3E%3Cpath d='M8 12L16 8L24 12L16 16Z' fill='white' opacity='0.9'/%3E%3Cpath d='M8 16L16 20L24 16' stroke='white' stroke-width='1.5' fill='none'/%3E%3Cpath d='M8 20L16 24L24 20' stroke='white' stroke-width='1.5' fill='none'/%3E%3C/svg%3E"/>
 <style>
 :root {
@@ -331,6 +331,10 @@ header {
     display: flex;
     flex-direction: column;
     overflow-y: auto;
+    transition: width 0.2s, min-width 0.2s, padding 0.2s, opacity 0.2s;
+}
+#rightPanel.hidden {
+    width: 0; min-width: 0; overflow: hidden; border-left: none; opacity: 0; padding: 0;
 }
 
 .prop-section {
@@ -865,17 +869,27 @@ header {
     transform: translateX(-50%); z-index: 600;
     background: white; border: 1px solid var(--border);
     border-radius: 8px; box-shadow: var(--shadow-lg);
-    padding: 10px 16px; display: none; min-width: 320px; font-size: 12px;
+    padding: 0; display: none; min-width: 320px; max-width: 420px; font-size: 12px;
+    resize: both; overflow: hidden;
 }
-#distancePanel.show { display: block; }
-#distancePanel h5 { font-size: 10px; font-weight: 600; text-transform: uppercase; color: var(--text-muted); margin-bottom: 6px; }
+#distancePanel.show { display: flex; flex-direction: column; }
+#distancePanel.minimized #distanceContent { display: none; }
+#distancePanel.minimized { min-width: 220px; min-height: auto !important; height: auto !important; resize: none; }
+.dist-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 6px 10px; background: var(--bg-secondary); border-bottom: 1px solid var(--border);
+    cursor: move; user-select: none; border-radius: 8px 8px 0 0; flex-shrink: 0;
+}
+.dist-header h5 { font-size: 10px; font-weight: 600; text-transform: uppercase; color: var(--text-muted); margin: 0; }
+.dist-header-btns { display: flex; gap: 4px; }
+.dist-header-btns button { background: none; border: none; cursor: pointer; color: var(--text-muted); font-size: 13px; padding: 0 3px; line-height: 1; }
+.dist-header-btns button:hover { color: var(--danger); }
+#distanceContent { padding: 10px 14px; overflow-y: auto; flex: 1; }
 .dist-row { display: flex; justify-content: space-between; margin-bottom: 3px; }
 .dist-row .dist-label { color: var(--text-secondary); }
 .dist-row .dist-value { font-weight: 600; color: var(--text); font-family: monospace; }
 .dist-row .dist-value.green { color: var(--success); }
 .dist-row .dist-value.blue { color: var(--accent); }
-#distancePanel .dist-close { position: absolute; top: 6px; right: 8px; background: none; border: none; cursor: pointer; color: var(--text-muted); font-size: 14px; }
-#distancePanel .dist-close:hover { color: var(--danger); }
 
 /* Measurement A/B end markers */
 .measure-marker-a {
@@ -958,7 +972,7 @@ header {
     <div class="app-logo">
         <svg width="20" height="20" viewBox="0 0 32 32"><rect x="2" y="2" width="28" height="28" rx="4" fill="#0096D6"/><path d="M8 12L16 8L24 12L16 16Z" fill="white" opacity="0.9"/><path d="M8 16L16 20L24 16" stroke="white" stroke-width="1.5" fill="none"/><path d="M8 20L16 24L24 20" stroke="white" stroke-width="1.5" fill="none"/></svg>
         NexiMap KML Studio
-        <span class="ver">v2.9</span>
+        <span class="ver">v2.9.2</span>
     </div>
 
     <!-- File Menu -->
@@ -1005,6 +1019,9 @@ header {
     </button>
     <button class="tool-btn" id="btnToggleMapLayers" onclick="toggleMapLayerSelector()" title="Toggle map type selector">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+    </button>
+    <button class="tool-btn" id="btnToggleProps" onclick="togglePropertiesPanel()" title="Toggle properties panel">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></svg>
     </button>
 
     <div class="spacer"></div>
@@ -1107,8 +1124,13 @@ header {
             <div class="ruler-pts" id="rulerPoints">0 points — Click to add, Enter/dblclick to finish, Escape to cancel</div>
         </div>
         <div id="distancePanel">
-            <button class="dist-close" onclick="closeDistancePanel()">&#10005;</button>
-            <h5>Distance Measurement</h5>
+            <div class="dist-header" id="distDragHandle">
+                <h5>DISTANCE MEASUREMENT</h5>
+                <div class="dist-header-btns">
+                    <button onclick="toggleDistMinimize()" title="Minimize/Expand" id="distMinBtn">&#9660;</button>
+                    <button onclick="closeDistancePanel()" title="Close">&#10005;</button>
+                </div>
+            </div>
             <div id="distanceContent"></div>
         </div>
     </div>
@@ -4790,8 +4812,54 @@ function showDistancePanel(data) {
 }
 
 window.closeDistancePanel = function() {
-    document.getElementById('distancePanel').classList.remove('show');
+    const dp = document.getElementById('distancePanel');
+    dp.classList.remove('show', 'minimized');
+    dp.style.left = '50%'; dp.style.top = ''; dp.style.bottom = '20px';
+    dp.style.transform = 'translateX(-50%)';
+    dp.style.height = ''; dp.style.width = '';
     clearMeasureMarkers();
+};
+
+window.toggleDistMinimize = function() {
+    const dp = document.getElementById('distancePanel');
+    const btn = document.getElementById('distMinBtn');
+    dp.classList.toggle('minimized');
+    btn.innerHTML = dp.classList.contains('minimized') ? '&#9650;' : '&#9660;';
+};
+
+// Draggable distance panel
+(function() {
+    let dragEl = null, offsetX = 0, offsetY = 0;
+    document.addEventListener('mousedown', function(e) {
+        const handle = e.target.closest('#distDragHandle');
+        if (!handle) return;
+        if (e.target.tagName === 'BUTTON') return; // don't drag from buttons
+        dragEl = document.getElementById('distancePanel');
+        const rect = dragEl.getBoundingClientRect();
+        offsetX = e.clientX - rect.left;
+        offsetY = e.clientY - rect.top;
+        // Switch from centered positioning to absolute positioning
+        dragEl.style.transform = 'none';
+        dragEl.style.bottom = 'auto';
+        dragEl.style.left = rect.left + 'px';
+        dragEl.style.top = rect.top + 'px';
+        e.preventDefault();
+    });
+    document.addEventListener('mousemove', function(e) {
+        if (!dragEl) return;
+        dragEl.style.left = (e.clientX - offsetX) + 'px';
+        dragEl.style.top = (e.clientY - offsetY) + 'px';
+    });
+    document.addEventListener('mouseup', function() { dragEl = null; });
+})();
+
+window.togglePropertiesPanel = function() {
+    const rp = document.getElementById('rightPanel');
+    const btn = document.getElementById('btnToggleProps');
+    rp.classList.toggle('hidden');
+    btn.classList.toggle('active', !rp.classList.contains('hidden'));
+    // Trigger Leaflet map resize after panel animation
+    setTimeout(() => { if (map) map.invalidateSize(); }, 250);
 };
 
 
