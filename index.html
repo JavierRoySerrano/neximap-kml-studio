@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<!-- NexiMap KML Studio v2.8.3 - Fixed usedLayerIds in all return paths + glow reliability -->
+<!-- NexiMap KML Studio v2.8.4 - Better debug + ensure A and B layers in graph + larger K -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NexiMap KML Studio v2.8.3</title>
+<title>NexiMap KML Studio v2.8.4</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='2' width='28' height='28' rx='4' fill='%230096D6'/%3E%3Cpath d='M8 12L16 8L24 12L16 16Z' fill='white' opacity='0.9'/%3E%3Cpath d='M8 16L16 20L24 16' stroke='white' stroke-width='1.5' fill='none'/%3E%3Cpath d='M8 20L16 24L24 20' stroke='white' stroke-width='1.5' fill='none'/%3E%3C/svg%3E"/>
 <style>
 :root {
@@ -958,7 +958,7 @@ header {
     <div class="app-logo">
         <svg width="20" height="20" viewBox="0 0 32 32"><rect x="2" y="2" width="28" height="28" rx="4" fill="#0096D6"/><path d="M8 12L16 8L24 12L16 16Z" fill="white" opacity="0.9"/><path d="M8 16L16 20L24 16" stroke="white" stroke-width="1.5" fill="none"/><path d="M8 20L16 24L24 20" stroke="white" stroke-width="1.5" fill="none"/></svg>
         NexiMap KML Studio
-        <span class="ver">v2.8.3</span>
+        <span class="ver">v2.8.4</span>
     </div>
 
     <!-- File Menu -->
@@ -4908,7 +4908,7 @@ function calcCrossSegmentDistance(a, b) {
 
     // Step 2: Build SPARSE adjacency graph — for each endpoint, find K nearest neighbors
     // This keeps graph small (O(n*K)) instead of O(n^2) which hangs the browser
-    const K_NEIGHBORS = 4; // nearest neighbors per endpoint
+    const K_NEIGHBORS = 6; // nearest neighbors per endpoint
 
     function segEndpoints(layer) {
         return {
@@ -4954,18 +4954,32 @@ function calcCrossSegmentDistance(a, b) {
         }
     }
 
+    // Ensure A and B layers are in the graph
+    const aInGraph = allLines.some(l => l.id === a.layerId);
+    const bInGraph = allLines.some(l => l.id === b.layerId);
+    console.log('Graph: ' + allLines.length + ' layers, A(' + a.layerId + ') in graph: ' + aInGraph + ', B(' + b.layerId + ') in graph: ' + bInGraph);
+    console.log('A neighbors: ' + (adj.get(a.layerId)||[]).length + ', B neighbors: ' + (adj.get(b.layerId)||[]).length);
+    if (adj.get(a.layerId)) {
+        const aNeighbors = adj.get(a.layerId).map(n => n.neighborId + '(' + n.gap.toFixed(1) + 'km)').join(', ');
+        console.log('A neighbors detail: ' + aNeighbors);
+    }
+
+    if (!aInGraph || !bInGraph) {
+        console.warn('Layer not in graph! A visible:', layerA.visible, 'B visible:', layerB.visible);
+        const d = haversineDistance(a.coord[0], a.coord[1], b.coord[0], b.coord[1]);
+        return { distance: d, pathCoords: [a.coord, b.coord], segments: 0, usedLayerIds: [], segNames: [], segDistances: [] };
+    }
+
     // Step 3: Dijkstra from layer A to layer B — minimize total gap distance
     const dijkDist = new Map();
     const prev = new Map();
     allLines.forEach(l => dijkDist.set(l.id, Infinity));
     dijkDist.set(a.layerId, 0);
 
-    // Binary heap would be ideal but sorted insert is fine for sparse graphs
     const pq = [{ layerId: a.layerId, cost: 0 }];
     const settled = new Set();
 
     while (pq.length > 0) {
-        // Find min — scan for min instead of sort (faster for sparse updates)
         let minIdx = 0;
         for (let i = 1; i < pq.length; i++) {
             if (pq[i].cost < pq[minIdx].cost) minIdx = i;
@@ -4988,8 +5002,11 @@ function calcCrossSegmentDistance(a, b) {
         }
     }
 
+    console.log('Dijkstra settled ' + settled.size + ' nodes, reached B: ' + settled.has(b.layerId));
+
     // Reconstruct path from A to B
     if (!prev.has(b.layerId) && a.layerId !== b.layerId) {
+        console.warn('Dijkstra could not reach B from A! settled nodes: ' + settled.size + '/' + allLines.length);
         const d = haversineDistance(a.coord[0], a.coord[1], b.coord[0], b.coord[1]);
         return { distance: d, pathCoords: [a.coord, b.coord], segments: 0, usedLayerIds: [], segNames: [], segDistances: [] };
     }
