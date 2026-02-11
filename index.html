@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<!-- NexiMap KML Studio v2.4 - Smart vertex dots: viewport culling, zoom threshold, performance cap -->
+<!-- NexiMap KML Studio v2.5 - Multi-format export (KML/KMZ/GeoJSON/Simplified) in context menu & Save As -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NexiMap KML Studio v2.4</title>
+<title>NexiMap KML Studio v2.5</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='2' width='28' height='28' rx='4' fill='%230096D6'/%3E%3Cpath d='M8 12L16 8L24 12L16 16Z' fill='white' opacity='0.9'/%3E%3Cpath d='M8 16L16 20L24 16' stroke='white' stroke-width='1.5' fill='none'/%3E%3Cpath d='M8 20L16 24L24 20' stroke='white' stroke-width='1.5' fill='none'/%3E%3C/svg%3E"/>
 <style>
 :root {
@@ -696,6 +696,29 @@ header {
     0%, 100% { transform: scale(1); opacity: 1; }
     50% { transform: scale(1.4); opacity: 0.6; }
 }
+
+/* Context menu export submenu */
+.ctx-submenu {
+    position: relative;
+}
+.ctx-submenu-items {
+    display: none; padding: 4px 0; margin: 2px 0 0 8px;
+    border-left: 2px solid var(--border); background: var(--bg);
+}
+.ctx-submenu.open .ctx-submenu-items { display: block; }
+.ctx-submenu-toggle {
+    display: flex; align-items: center; justify-content: space-between; width: 100%;
+    padding: 6px 12px; border: none; background: none; cursor: pointer;
+    font-size: 12px; font-family: var(--font); color: var(--text); text-align: left;
+}
+.ctx-submenu-toggle:hover { background: var(--bg-hover); }
+.ctx-submenu-toggle .ctx-arrow { font-size: 10px; color: var(--text-muted); }
+.ctx-sub-item {
+    padding: 5px 12px 5px 16px; cursor: pointer; font-size: 11px; color: var(--text);
+    border: none; background: none; display: block; width: 100%;
+    text-align: left; font-family: var(--font);
+}
+.ctx-sub-item:hover { background: var(--bg-hover); color: var(--accent); }
 /* Crosshair cursor for pin placement mode */
 .leaflet-container.pin-cursor { cursor: crosshair !important; }
 .leaflet-container.pin-cursor .leaflet-interactive { cursor: crosshair !important; }
@@ -867,7 +890,7 @@ header {
     <div class="app-logo">
         <svg width="20" height="20" viewBox="0 0 32 32"><rect x="2" y="2" width="28" height="28" rx="4" fill="#0096D6"/><path d="M8 12L16 8L24 12L16 16Z" fill="white" opacity="0.9"/><path d="M8 16L16 20L24 16" stroke="white" stroke-width="1.5" fill="none"/><path d="M8 20L16 24L24 20" stroke="white" stroke-width="1.5" fill="none"/></svg>
         NexiMap KML Studio
-        <span class="ver">v2.4</span>
+        <span class="ver">v2.5</span>
     </div>
 
     <!-- File Menu -->
@@ -1180,8 +1203,18 @@ header {
     <div class="ctx-sep" data-for="both"></div>
     <div class="ctx-item" data-for="both" onclick="ctxCalcDistance()">📐 Calculate Distance</div>
     <div class="ctx-item" data-for="layer" onclick="ctxMeasureAB()">🟢🔴 Measure A-End → B-End</div>
-    <div class="ctx-sep" data-for="folder"></div>
-    <div class="ctx-item" data-for="folder" onclick="ctxExportFolderKML()">💾 Export Checked as KML</div>
+    <div class="ctx-sep" data-for="both"></div>
+    <div class="ctx-submenu" data-for="both" id="ctxExportSubmenu">
+        <button class="ctx-submenu-toggle" onclick="document.getElementById('ctxExportSubmenu').classList.toggle('open')">
+            💾 Export As… <span class="ctx-arrow">▶</span>
+        </button>
+        <div class="ctx-submenu-items">
+            <button class="ctx-sub-item" onclick="ctxExportAs('kml')">KML</button>
+            <button class="ctx-sub-item" onclick="ctxExportAs('kmz')">KMZ (compressed)</button>
+            <button class="ctx-sub-item" onclick="ctxExportAs('geojson')">GeoJSON</button>
+            <button class="ctx-sub-item" onclick="ctxExportAs('simplified')">Simplified GeoJSON</button>
+        </div>
+    </div>
     <div class="ctx-sep" data-for="both"></div>
     <div class="ctx-item danger" data-for="both" onclick="ctxDelete()">🗑️ Delete</div>
 </div>
@@ -1208,6 +1241,9 @@ header {
         💾 Save As… <span class="shortcut">Ctrl+Shift+S</span>
     </button>
     <div class="menu-sep"></div>
+    <button class="menu-dropdown-item" onclick="fileSaveAsGeoJSON(); closeMenus();">
+        📤 Save as GeoJSON
+    </button>
     <button class="menu-dropdown-item" onclick="exportSimplifiedGeoJSON(); closeMenus();">
         📤 Export Simplified GeoJSON
     </button>
@@ -3084,14 +3120,19 @@ window.fileSaveAs = async function() {
                 suggestedName: currentFileName,
                 types: [
                     { description: 'KML Files', accept: { 'application/vnd.google-earth.kml+xml': ['.kml'] } },
-                    { description: 'KMZ Files (compressed)', accept: { 'application/vnd.google-earth.kmz': ['.kmz'] } }
+                    { description: 'KMZ Files (compressed)', accept: { 'application/vnd.google-earth.kmz': ['.kmz'] } },
+                    { description: 'GeoJSON Files', accept: { 'application/geo+json': ['.geojson'] } }
                 ]
             };
             const handle = await window.showSaveFilePicker(opts);
-            const isKmz = handle.name.toLowerCase().endsWith('.kmz');
+            const fname = handle.name.toLowerCase();
+            const isKmz = fname.endsWith('.kmz');
+            const isGeoJson = fname.endsWith('.geojson') || fname.endsWith('.json');
             let data;
             if (isKmz) {
                 data = await buildKMZBlob();
+            } else if (isGeoJson) {
+                data = buildFullGeoJSON();
             } else {
                 data = buildKML();
             }
@@ -3108,10 +3149,10 @@ window.fileSaveAs = async function() {
         }
     }
     // Fallback: prompt for name then download
-    const name = prompt('Save file as (.kml or .kmz):', currentFileName);
+    const name = prompt('Save file as (.kml, .kmz, or .geojson):', currentFileName);
     if (!name) return;
-    const isKmz = name.toLowerCase().endsWith('.kmz');
-    if (isKmz) {
+    const nameLc = name.toLowerCase();
+    if (nameLc.endsWith('.kmz')) {
         currentFileName = name;
         try {
             const blob = await buildKMZBlob();
@@ -3122,6 +3163,11 @@ window.fileSaveAs = async function() {
             currentFileIsKMZ = true;
             toast('Saved as ' + currentFileName, 'success');
         } catch (err) { toast('KMZ save failed: ' + err.message, 'error'); }
+    } else if (nameLc.endsWith('.geojson') || nameLc.endsWith('.json')) {
+        currentFileName = name;
+        currentFileIsKMZ = false;
+        downloadFile(buildFullGeoJSON(), currentFileName, 'application/geo+json');
+        toast('Saved as ' + currentFileName, 'success');
     } else {
         currentFileName = name.endsWith('.kml') ? name : name + '.kml';
         currentFileIsKMZ = false;
@@ -3234,6 +3280,93 @@ function getProjectName() {
     if (rf.length === 1) return rf[0].name.replace(/[^a-zA-Z0-9_-]/g, '_');
     return rf.length > 1 ? 'merged_' + rf.length : 'export';
 }
+
+
+// === FULL GEOJSON EXPORT (v2.5) ===
+function buildFullGeoJSON() {
+    const features = [];
+    Object.values(projectData.layers).forEach(l => {
+        if (l.type === 'line' && l.coords.length > 1) {
+            features.push({
+                type: 'Feature',
+                properties: { name: l.name, stroke: l.color, 'stroke-width': l.width, 'stroke-opacity': l.opacity },
+                geometry: { type: 'LineString', coordinates: l.coords.map(c => [c[1], c[0]]) }
+            });
+        } else if (l.type === 'point' && l.coords.length > 0) {
+            features.push({
+                type: 'Feature',
+                properties: { name: l.name, 'marker-color': l.color, pinType: l.pinType || 'default', description: l.description || '' },
+                geometry: { type: 'Point', coordinates: [l.coords[0][1], l.coords[0][0]] }
+            });
+        }
+    });
+    return JSON.stringify({ type: 'FeatureCollection', features }, null, 2);
+}
+
+// Build GeoJSON for specific layers (folder export)
+function buildGeoJSONForLayers(layerIds) {
+    const features = [];
+    layerIds.forEach(id => {
+        const l = projectData.layers[id]; if (!l) return;
+        if (l.type === 'line' && l.coords.length > 1) {
+            features.push({
+                type: 'Feature',
+                properties: { name: l.name, stroke: l.color, 'stroke-width': l.width, 'stroke-opacity': l.opacity },
+                geometry: { type: 'LineString', coordinates: l.coords.map(c => [c[1], c[0]]) }
+            });
+        } else if (l.type === 'point' && l.coords.length > 0) {
+            features.push({
+                type: 'Feature',
+                properties: { name: l.name, 'marker-color': l.color, pinType: l.pinType || 'default' },
+                geometry: { type: 'Point', coordinates: [l.coords[0][1], l.coords[0][0]] }
+            });
+        }
+    });
+    return JSON.stringify({ type: 'FeatureCollection', features }, null, 2);
+}
+
+// Build simplified GeoJSON for specific layers
+function buildSimplifiedGeoJSONForLayers(layerIds) {
+    const lines = layerIds.map(id => projectData.layers[id]).filter(l => l && l.type === 'line');
+    const pins = layerIds.map(id => projectData.layers[id]).filter(l => l && l.type === 'point');
+    const totalPts = lines.reduce((s, l) => s + l.coords.length, 0);
+    const TARGET = 300;
+    let tol = 0;
+    if (totalPts > TARGET) {
+        let lo = 0.0001, hi = 1.0, best = hi;
+        for (let iter = 0; iter < 30; iter++) {
+            const mid = (lo + hi) / 2;
+            const count = lines.reduce((s, l) => s + douglasPeucker(l.coords, mid).length, 0);
+            if (count > TARGET) lo = mid; else { best = mid; hi = mid; }
+        }
+        tol = best;
+    }
+    const features = [];
+    lines.forEach(l => {
+        const simp = tol > 0 ? douglasPeucker(l.coords, tol) : l.coords;
+        features.push({
+            type: 'Feature',
+            properties: { name: l.name, stroke: l.color, 'stroke-width': l.width, 'stroke-opacity': l.opacity },
+            geometry: { type: 'LineString', coordinates: simp.map(c => [Math.round(c[1]*1e5)/1e5, Math.round(c[0]*1e5)/1e5]) }
+        });
+    });
+    pins.forEach(l => {
+        features.push({
+            type: 'Feature',
+            properties: { name: l.name, 'marker-color': l.color },
+            geometry: { type: 'Point', coordinates: [Math.round(l.coords[0][1]*1e5)/1e5, Math.round(l.coords[0][0]*1e5)/1e5] }
+        });
+    });
+    return JSON.stringify({ type: 'FeatureCollection', features });
+}
+
+// Save as GeoJSON (full) from File menu
+window.fileSaveAsGeoJSON = function() {
+    const gj = buildFullGeoJSON();
+    const name = getProjectName() + '.geojson';
+    downloadFile(gj, name, 'application/geo+json');
+    toast('Saved as GeoJSON: ' + name, 'success');
+};
 
 // === MENUS ===
 window.toggleMenu = function(id, btn) {
@@ -4632,19 +4765,72 @@ function findNearestVertexIdx(latlng, coords) {
 // Intercept map click for measure mode - added in the main click handler override below
 
 // === EXPORT CHECKED FOLDER AS KML (Enhancement 1) ===
-window.ctxExportFolderKML = function() {
-    if (!ctxTargetFolderId) return;
-    const folder = projectData.folders.find(f => f.id === ctxTargetFolderId);
-    if (!folder) return;
-    // Collect all checked sub-items
-    let k = '<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n<Document>\n';
-    k += '  <name>' + escXml(folder.name) + '</name>\n';
-    k += buildKMLFolderChecked(folder, '  ');
-    k += '</Document>\n</kml>';
-    downloadFile(k, folder.name.replace(/[^a-zA-Z0-9_-]/g, '_') + '.kml', 'application/vnd.google-earth.kml+xml');
-    toast('Exported checked items as KML', 'success');
+// Unified context menu export (v2.5)
+window.ctxExportAs = async function(format) {
+    hideCtxMenu();
+    let exportName = 'export';
+    let layerIds = [];
+
+    if (ctxTargetFolderId) {
+        const folder = projectData.folders.find(f => f.id === ctxTargetFolderId);
+        if (!folder) return;
+        exportName = folder.name.replace(/[^a-zA-Z0-9_-]/g, '_');
+        function collectChecked(fId) {
+            const f = projectData.folders.find(ff => ff.id === fId);
+            if (!f || f.checked === false) return;
+            f.items.forEach(id => { if (projectData.layers[id]) layerIds.push(id); });
+            projectData.folders.filter(ff => ff.parentId === fId && ff.checked !== false).forEach(sf => collectChecked(sf.id));
+        }
+        collectChecked(ctxTargetFolderId);
+    } else if (ctxTargetId) {
+        const l = projectData.layers[ctxTargetId];
+        if (!l) return;
+        exportName = l.name.replace(/[^a-zA-Z0-9_-]/g, '_');
+        layerIds = [ctxTargetId];
+    }
+
+    if (!layerIds.length) { toast('No layers to export', 'error'); return; }
+
+    if (format === 'kml') {
+        const kml = buildKMLForLayers(layerIds, exportName);
+        downloadFile(kml, exportName + '.kml', 'application/vnd.google-earth.kml+xml');
+        toast('Exported ' + layerIds.length + ' layer(s) as KML', 'success');
+    } else if (format === 'kmz') {
+        if (typeof JSZip === 'undefined') { toast('JSZip not loaded', 'error'); return; }
+        const kml = buildKMLForLayers(layerIds, exportName);
+        const zip = new JSZip();
+        zip.file('doc.kml', kml);
+        const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = exportName + '.kmz';
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        toast('Exported ' + layerIds.length + ' layer(s) as KMZ', 'success');
+    } else if (format === 'geojson') {
+        const gj = buildGeoJSONForLayers(layerIds);
+        downloadFile(gj, exportName + '.geojson', 'application/geo+json');
+        toast('Exported ' + layerIds.length + ' layer(s) as GeoJSON', 'success');
+    } else if (format === 'simplified') {
+        const gj = buildSimplifiedGeoJSONForLayers(layerIds);
+        downloadFile(gj, exportName + '_simplified.geojson', 'application/geo+json');
+        toast('Exported simplified GeoJSON', 'success');
+    }
     ctxTargetFolderId = null;
+    ctxTargetId = null;
 };
+
+function buildKMLForLayers(layerIds, docName) {
+    let k = '<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2">\n<Document>\n';
+    k += '  <n>' + escXml(docName) + '</n>\n';
+    layerIds.forEach(id => {
+        const l = projectData.layers[id]; if (!l) return;
+        k += buildPM(l, '  ');
+    });
+    k += '</Document>\n</kml>';
+    return k;
+}
+
+window.ctxExportFolderKML = function() { ctxExportAs('kml'); };
 
 function buildKMLFolderChecked(folder, ind) {
     let k = '';
