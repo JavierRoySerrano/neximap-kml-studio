@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<!-- NexiMap KML Studio v2.8.1 - Fixed duplicate segPath declaration -->
+<!-- NexiMap KML Studio v2.8.2 - K-nearest neighbor sparse graph for fast Dijkstra -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NexiMap KML Studio v2.8.1</title>
+<title>NexiMap KML Studio v2.8.2</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='2' width='28' height='28' rx='4' fill='%230096D6'/%3E%3Cpath d='M8 12L16 8L24 12L16 16Z' fill='white' opacity='0.9'/%3E%3Cpath d='M8 16L16 20L24 16' stroke='white' stroke-width='1.5' fill='none'/%3E%3Cpath d='M8 20L16 24L24 20' stroke='white' stroke-width='1.5' fill='none'/%3E%3C/svg%3E"/>
 <style>
 :root {
@@ -958,7 +958,7 @@ header {
     <div class="app-logo">
         <svg width="20" height="20" viewBox="0 0 32 32"><rect x="2" y="2" width="28" height="28" rx="4" fill="#0096D6"/><path d="M8 12L16 8L24 12L16 16Z" fill="white" opacity="0.9"/><path d="M8 16L16 20L24 16" stroke="white" stroke-width="1.5" fill="none"/><path d="M8 20L16 24L24 20" stroke="white" stroke-width="1.5" fill="none"/></svg>
         NexiMap KML Studio
-        <span class="ver">v2.8.1</span>
+        <span class="ver">v2.8.2</span>
     </div>
 
     <!-- File Menu -->
@@ -4903,8 +4903,10 @@ function calcCrossSegmentDistance(a, b) {
         return { distance: dist, pathCoords: [a.coord, b.coord], segments: 0 };
     }
 
-    // Step 2: Build FULL adjacency graph — connect every segment endpoint
-    // to every other segment endpoint, weighted by gap distance.
+    // Step 2: Build SPARSE adjacency graph — for each endpoint, find K nearest neighbors
+    // This keeps graph small (O(n*K)) instead of O(n^2) which hangs the browser
+    const K_NEIGHBORS = 4; // nearest neighbors per endpoint
+
     function segEndpoints(layer) {
         return {
             start: layer.coords[0],
@@ -4916,57 +4918,67 @@ function calcCrossSegmentDistance(a, b) {
     const epMap = new Map();
     allLines.forEach(l => epMap.set(l.id, segEndpoints(l)));
 
-    // Build adjacency: for each pair of segments, record all 4 endpoint-to-endpoint gaps
-    const adj = new Map(); // layerId -> [{neighborId, myEnd, theirEnd, gap}]
+    // For each segment endpoint, find K nearest other segment endpoints
+    const adj = new Map();
     allLines.forEach(l => adj.set(l.id, []));
 
     for (let i = 0; i < allLines.length; i++) {
         const idI = allLines[i].id;
         const epI = epMap.get(idI);
-        for (let j = i + 1; j < allLines.length; j++) {
-            const idJ = allLines[j].id;
-            const epJ = epMap.get(idJ);
-            // All 4 endpoint combinations
-            const pairs = [
-                { myEnd: 'start', theirEnd: 'start', d: haversineDistance(epI.start[0], epI.start[1], epJ.start[0], epJ.start[1]) },
-                { myEnd: 'start', theirEnd: 'end', d: haversineDistance(epI.start[0], epI.start[1], epJ.end[0], epJ.end[1]) },
-                { myEnd: 'end', theirEnd: 'start', d: haversineDistance(epI.end[0], epI.end[1], epJ.start[0], epJ.start[1]) },
-                { myEnd: 'end', theirEnd: 'end', d: haversineDistance(epI.end[0], epI.end[1], epJ.end[0], epJ.end[1]) },
-            ];
-            // Keep the best (smallest gap) connection between this pair
-            const best = pairs.reduce((a, b) => a.d < b.d ? a : b);
-            adj.get(idI).push({ neighborId: idJ, myEnd: best.myEnd, theirEnd: best.theirEnd, gap: best.d });
-            adj.get(idJ).push({ neighborId: idI, myEnd: best.theirEnd, theirEnd: best.myEnd, gap: best.d });
+
+        for (const myEnd of ['start', 'end']) {
+            const myPt = myEnd === 'start' ? epI.start : epI.end;
+            // Compute distance to all other segment endpoints
+            const candidates = [];
+            for (let j = 0; j < allLines.length; j++) {
+                if (j === i) continue;
+                const idJ = allLines[j].id;
+                const epJ = epMap.get(idJ);
+                const dS = haversineDistance(myPt[0], myPt[1], epJ.start[0], epJ.start[1]);
+                const dE = haversineDistance(myPt[0], myPt[1], epJ.end[0], epJ.end[1]);
+                if (dS <= dE) {
+                    candidates.push({ neighborId: idJ, theirEnd: 'start', gap: dS });
+                } else {
+                    candidates.push({ neighborId: idJ, theirEnd: 'end', gap: dE });
+                }
+            }
+            // Keep only K nearest
+            candidates.sort((a, b) => a.gap - b.gap);
+            const topK = candidates.slice(0, K_NEIGHBORS);
+            for (const c of topK) {
+                adj.get(idI).push({ neighborId: c.neighborId, myEnd, theirEnd: c.theirEnd, gap: c.gap });
+            }
         }
     }
 
     // Step 3: Dijkstra from layer A to layer B — minimize total gap distance
-    // This finds the path through segments with the smallest total gap between them,
-    // avoiding stray segments that connect nowhere useful.
-    const dist = new Map(); // layerId -> best total gap distance
-    const prev = new Map(); // layerId -> {from, myEnd, theirEnd}
-    allLines.forEach(l => dist.set(l.id, Infinity));
-    dist.set(a.layerId, 0);
+    const dijkDist = new Map();
+    const prev = new Map();
+    allLines.forEach(l => dijkDist.set(l.id, Infinity));
+    dijkDist.set(a.layerId, 0);
 
-    // Simple priority queue using sorted array (fine for <1000 segments)
+    // Binary heap would be ideal but sorted insert is fine for sparse graphs
     const pq = [{ layerId: a.layerId, cost: 0 }];
     const settled = new Set();
 
     while (pq.length > 0) {
-        // Extract min cost
-        pq.sort((x, y) => x.cost - y.cost);
-        const cur = pq.shift();
+        // Find min — scan for min instead of sort (faster for sparse updates)
+        let minIdx = 0;
+        for (let i = 1; i < pq.length; i++) {
+            if (pq[i].cost < pq[minIdx].cost) minIdx = i;
+        }
+        const cur = pq.splice(minIdx, 1)[0];
         if (settled.has(cur.layerId)) continue;
         settled.add(cur.layerId);
 
-        if (cur.layerId === b.layerId) break; // Found shortest path
+        if (cur.layerId === b.layerId) break;
 
         const neighbors = adj.get(cur.layerId) || [];
         for (const n of neighbors) {
             if (settled.has(n.neighborId)) continue;
             const newCost = cur.cost + n.gap;
-            if (newCost < dist.get(n.neighborId)) {
-                dist.set(n.neighborId, newCost);
+            if (newCost < dijkDist.get(n.neighborId)) {
+                dijkDist.set(n.neighborId, newCost);
                 prev.set(n.neighborId, { from: cur.layerId, myEnd: n.myEnd, theirEnd: n.theirEnd });
                 pq.push({ layerId: n.neighborId, cost: newCost });
             }
@@ -4981,19 +4993,19 @@ function calcCrossSegmentDistance(a, b) {
 
     const segPath = [];
     const conns = [];
-    let cur = b.layerId;
-    while (cur !== a.layerId) {
-        segPath.unshift(cur);
-        const p = prev.get(cur);
-        conns.unshift({ from: p.from, myEnd: p.myEnd, theirEnd: p.theirEnd, to: cur });
-        cur = p.from;
+    let curNode = b.layerId;
+    while (curNode !== a.layerId) {
+        segPath.unshift(curNode);
+        const p = prev.get(curNode);
+        conns.unshift({ from: p.from, myEnd: p.myEnd, theirEnd: p.theirEnd, to: curNode });
+        curNode = p.from;
     }
     segPath.unshift(a.layerId);
 
     const foundPath = { path: segPath, connections: conns };
 
     // Step 4: Build oriented coordinate chain along the found path
-    // segPath and conns already built above from Dijkstra reconstruction
+    // segPath and conns already built from Dijkstra reconstruction above
 
     // Orient each segment so it flows in the correct direction
     const oriented = []; // [{layerId, coords, forward}]
