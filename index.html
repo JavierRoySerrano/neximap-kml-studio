@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<!-- NexiMap KML Studio v1.9 - Save/Save As, Export Image (PNG/JPG/SVG), Print Map -->
+<!-- NexiMap KML Studio v2.1 - Ruler polyline tool, consistent folder/subfolder compact color picker -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NexiMap KML Studio v1.9</title>
+<title>NexiMap KML Studio v2.1</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='2' width='28' height='28' rx='4' fill='%230096D6'/%3E%3Cpath d='M8 12L16 8L24 12L16 16Z' fill='white' opacity='0.9'/%3E%3Cpath d='M8 16L16 20L24 16' stroke='white' stroke-width='1.5' fill='none'/%3E%3Cpath d='M8 20L16 24L24 20' stroke='white' stroke-width='1.5' fill='none'/%3E%3C/svg%3E"/>
 <style>
 :root {
@@ -568,6 +568,57 @@ header {
     #map { width: 100% !important; height: 100% !important; }
     body { overflow: visible !important; }
 }
+
+/* Measure mode crosshair cursor */
+.leaflet-container.measure-cursor { cursor: crosshair !important; }
+.leaflet-container.measure-cursor .leaflet-interactive { cursor: crosshair !important; }
+
+/* Vertex dots overlay (non-edit, for visual reference) */
+.vertex-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: rgba(255,255,255,0.85); border: 1.5px solid rgba(0,0,0,0.5);
+    box-shadow: 0 0 3px rgba(0,0,0,0.3); z-index: 600 !important;
+    cursor: crosshair; transition: transform 0.1s;
+}
+.vertex-dot:hover { transform: scale(1.8); background: #fbbf24; border-color: #f59e0b; }
+.vertex-dot-end {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: rgba(255,255,255,0.95); border: 2px solid rgba(0,0,0,0.6);
+    box-shadow: 0 0 4px rgba(0,0,0,0.4); z-index: 650 !important;
+    cursor: crosshair; transition: transform 0.1s;
+}
+.vertex-dot-end:hover { transform: scale(1.8); background: #fbbf24; border-color: #f59e0b; }
+
+/* Measure snap preview dot */
+.measure-snap-dot {
+    width: 16px; height: 16px; border-radius: 50%;
+    border: 3px solid #f59e0b; background: rgba(245,158,11,0.3);
+    z-index: 2500 !important; pointer-events: none;
+    animation: snapPulse 0.8s ease-in-out infinite;
+}
+@keyframes snapPulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.3); opacity: 0.7; }
+}
+
+
+/* Ruler polyline tool */
+#rulerPanel {
+    position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
+    background: rgba(0,0,0,0.82); color: white; border-radius: 8px;
+    padding: 8px 16px; z-index: 1200; display: none;
+    font-family: var(--font); font-size: 12px; box-shadow: var(--shadow-lg);
+    min-width: 220px; text-align: center; backdrop-filter: blur(4px);
+    pointer-events: none;
+}
+#rulerPanel.show { display: block; }
+#rulerPanel .ruler-dist { font-size: 18px; font-weight: 700; color: #fbbf24; margin: 2px 0; }
+#rulerPanel .ruler-pts { font-size: 10px; color: rgba(255,255,255,0.6); }
+#rulerPanel .ruler-label { font-size: 10px; color: rgba(255,255,255,0.7); text-transform: uppercase; letter-spacing: 0.5px; }
+
+/* Ruler cursor */
+.leaflet-container.ruler-cursor { cursor: crosshair !important; }
+.leaflet-container.ruler-cursor .leaflet-interactive { cursor: crosshair !important; }
 /* Crosshair cursor for pin placement mode */
 .leaflet-container.pin-cursor { cursor: crosshair !important; }
 .leaflet-container.pin-cursor .leaflet-interactive { cursor: crosshair !important; }
@@ -739,7 +790,7 @@ header {
     <div class="app-logo">
         <svg width="20" height="20" viewBox="0 0 32 32"><rect x="2" y="2" width="28" height="28" rx="4" fill="#0096D6"/><path d="M8 12L16 8L24 12L16 16Z" fill="white" opacity="0.9"/><path d="M8 16L16 20L24 16" stroke="white" stroke-width="1.5" fill="none"/><path d="M8 20L16 24L24 20" stroke="white" stroke-width="1.5" fill="none"/></svg>
         NexiMap KML Studio
-        <span class="ver">v1.9</span>
+        <span class="ver">v2.1</span>
     </div>
 
     <!-- File Menu -->
@@ -771,6 +822,9 @@ header {
     </button>
     <button class="tool-btn" id="btnMeasurePath" onclick="toggleMeasureMode()" title="Measure A-End to B-End distance on a line">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12h20"/><path d="M6 8v8"/><path d="M18 8v8"/><path d="M10 10v4"/><path d="M14 10v4"/></svg>
+    </button>
+    <button class="tool-btn" id="btnRuler" onclick="toggleRulerMode()" title="Ruler: draw a polyline to measure distance">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21L21 3"/><path d="M6 18l2-2"/><path d="M9 15l2-2"/><path d="M12 12l2-2"/><path d="M15 9l2-2"/><circle cx="3" cy="21" r="1.5" fill="currentColor"/><circle cx="21" cy="3" r="1.5" fill="currentColor"/></svg>
     </button>
 
     <div class="tool-sep"></div>
@@ -818,6 +872,10 @@ header {
                 <input type="checkbox" id="filterPins" checked onchange="applyLayerFilters()">
                 📍 Pins
             </label>
+            <label class="filter-toggle" title="Show vertex dots on line segments">
+                <input type="checkbox" id="filterVertexDots" onchange="applyLayerFilters()">
+                ○ Vertices
+            </label>
         </div>
         <div id="leftResize"></div>
     </div>
@@ -852,6 +910,11 @@ header {
             <img id="logoImage" src="" alt="Logo">
             <div class="logo-remove" onclick="removeLogo()">✕</div>
             <div class="logo-resize" id="logoResizeHandle"></div>
+        </div>
+        <div id="rulerPanel">
+            <div class="ruler-label">📏 Ruler Measurement</div>
+            <div class="ruler-dist" id="rulerDistance">0.00 m</div>
+            <div class="ruler-pts" id="rulerPoints">0 points — Click to add, Enter/dblclick to finish, Escape to cancel</div>
         </div>
         <div id="distancePanel">
             <button class="dist-close" onclick="closeDistancePanel()">&#10005;</button>
@@ -1081,6 +1144,9 @@ header {
     </button>
     <button class="menu-dropdown-item" onclick="togglePinMode(); closeMenus();">
         📍 Place Pin Marker
+    </button>
+    <button class="menu-dropdown-item" onclick="toggleRulerMode(); closeMenus();">
+        📏 Ruler Tool
     </button>
     <div class="menu-sep"></div>
     <button class="menu-dropdown-item" onclick="toggleEditMode(); closeMenus();">
@@ -1783,6 +1849,52 @@ function renderMapLayers() {
             renderVertexMarkers(layer);
         }
     });
+
+    // Render vertex dots overlay if enabled (v2.0)
+    renderVertexDots();
+}
+
+// === VERTEX DOTS (v2.0) ===
+let vertexDotMarkers = [];
+
+function renderVertexDots() {
+    // Clear existing dots
+    vertexDotMarkers.forEach(m => map.removeLayer(m));
+    vertexDotMarkers = [];
+
+    const showDots = document.getElementById('filterVertexDots').checked;
+    if (!showDots && !measureMode) return;
+
+    // In measure mode, always show dots for the selected line to make clicking easy
+    const layersToShow = measureMode
+        ? [projectData.layers[selectedLayerId]].filter(Boolean)
+        : Object.values(projectData.layers);
+
+    layersToShow.forEach(layer => {
+        if (!layer.visible || layer.type !== 'line' || layer.coords.length < 2) return;
+        // Don't show dots if edit mode is showing draggable markers for this layer
+        if (editMode && layer.id === selectedLayerId) return;
+
+        layer.coords.forEach((coord, idx) => {
+            const isEnd = idx === 0 || idx === layer.coords.length - 1;
+            const icon = L.divIcon({
+                className: isEnd ? 'vertex-dot-end' : 'vertex-dot',
+                iconSize: isEnd ? [10, 10] : [8, 8],
+                iconAnchor: isEnd ? [5, 5] : [4, 4]
+            });
+            const marker = L.marker(coord, { icon, interactive: true, zIndexOffset: 600 }).addTo(map);
+
+            // In measure mode, clicking a dot triggers measure
+            marker.on('click', (e) => {
+                L.DomEvent.stopPropagation(e);
+                if (measureMode) {
+                    handleMeasureClick(e.latlng, idx, layer.id);
+                }
+            });
+
+            vertexDotMarkers.push(marker);
+        });
+    });
 }
 
 window.applyLayerFilters = function() { renderMapLayers(); };
@@ -2160,7 +2272,7 @@ function updatePropsPanel() {
         if (selectedLayerIds.size > 0) {
             const firstL = projectData.layers[[...selectedLayerIds][0]];
             if (firstL) {
-                renderMultiColorSwatches(firstL.color);
+                renderCompactColorForFolder(firstL.color);
                 document.getElementById('propWidth').value = firstL.width;
                 document.getElementById('propWidthVal').textContent = firstL.width;
                 document.getElementById('propOpacity').value = firstL.opacity;
@@ -2168,10 +2280,10 @@ function updatePropsPanel() {
             }
         }
         show('propPinInfo', false); show('propDistance', false);
-        // Hide pin-only rows, show line rows
-        document.getElementById('propColorCompactRow').style.display = 'none';
-        document.getElementById('propColorFullRow').style.display = '';
-        document.getElementById('propColorFullCustomRow').style.display = '';
+        // Compact color for folders (single swatch, click to expand)
+        document.getElementById('propColorCompactRow').style.display = '';
+        document.getElementById('propColorFullRow').style.display = 'none';
+        document.getElementById('propColorFullCustomRow').style.display = 'none';
         document.getElementById('propColorExpandPanel').classList.remove('show');
         return;
     }
@@ -2204,16 +2316,16 @@ function updatePropsPanel() {
     document.getElementById('propPointCount').textContent = layer.coords.length + (layer.type === 'line' ? ' vertices' : ' (pin)');
     document.getElementById('propType').textContent = layer.type === 'line' ? 'LineString' : 'Pin Marker';
 
-    // Render color: compact for pins, full for lines
-    const isPin = layer.type === 'point';
-    document.getElementById('propColorCompactRow').style.display = isPin ? '' : 'none';
-    document.getElementById('propColorFullRow').style.display = isPin ? 'none' : '';
-    document.getElementById('propColorFullCustomRow').style.display = isPin ? 'none' : '';
+    // Render color: compact for pins and multi-select/folders, full for single lines
+    const useCompact = layer.type === 'point' || isMulti;
+    document.getElementById('propColorCompactRow').style.display = useCompact ? '' : 'none';
+    document.getElementById('propColorFullRow').style.display = useCompact ? 'none' : '';
+    document.getElementById('propColorFullCustomRow').style.display = useCompact ? 'none' : '';
     // Close expanded panel on selection change
     document.getElementById('propColorExpandPanel').classList.remove('show');
 
-    if (isPin) {
-        // Compact: single swatch
+    if (useCompact) {
+        // Compact: single swatch (pins, folders, multi-select)
         document.getElementById('propColorCompactSwatch').style.background = layer.color;
         if (layer.color === '#ffffff') document.getElementById('propColorCompactSwatch').style.borderColor = '#ddd';
         else document.getElementById('propColorCompactSwatch').style.borderColor = '#ccc';
@@ -2418,6 +2530,11 @@ function finishDraw() {
 }
 
 map.on('click', (e) => {
+    // Ruler mode (v2.1)
+    if (rulerMode) {
+        addRulerPoint(e.latlng);
+        return;
+    }
     // Measure mode (Enhancement 5) - delegate to shared handler
     if (measureMode) {
         handleMeasureClick(e.latlng);
@@ -2443,6 +2560,7 @@ map.on('click', (e) => {
         document.getElementById('editBanner').classList.remove('show');
         const lc = document.querySelector('.leaflet-container');
         if (lc) lc.classList.remove('pin-cursor');
+        map.doubleClickZoom.enable();
         return;
     }
     // Draw mode
@@ -2468,6 +2586,11 @@ map.on('click', (e) => {
 });
 
 map.on('dblclick', (e) => {
+    if (rulerMode) {
+        // Double-click finishes ruler (don't add the point twice)
+        deactivateRuler();
+        return;
+    }
     if (drawMode) {
         e.originalEvent.preventDefault();
         finishDraw();
@@ -2897,10 +3020,13 @@ window.togglePinMode = function() {
         document.getElementById('editBanner').classList.add('show');
         const lc = document.querySelector('.leaflet-container');
         if (lc) lc.classList.add('pin-cursor');
+        // Disable doubleClickZoom so click fires instantly (no 200ms delay)
+        map.doubleClickZoom.disable();
     } else {
         document.getElementById('editBanner').classList.remove('show');
         const lc = document.querySelector('.leaflet-container');
         if (lc) lc.classList.remove('pin-cursor');
+        map.doubleClickZoom.enable();
     }
     toast(pinMode ? 'Click on map to place a pin' : 'Pin mode OFF', 'info');
 };
@@ -3151,8 +3277,9 @@ document.addEventListener('keydown', (e) => {
     else if (e.ctrlKey && e.key === 's') { e.preventDefault(); fileSave(); }
     if (e.key === 'Delete' && selectedLayerId) { deleteSelected(); }
     if (e.key === 'Escape') {
-        if (measureMode) { measureMode = false; clearMeasureMarkers(); document.getElementById('btnMeasurePath').classList.remove('active'); if (!editMode) document.getElementById('editBanner').classList.remove('show'); toast('Measure cancelled', 'info'); }
-        else if (pinMode) { pinMode = false; document.getElementById('btnPlacePin').classList.remove('active'); document.getElementById('editBanner').classList.remove('show'); const lc2 = document.querySelector('.leaflet-container'); if (lc2) lc2.classList.remove('pin-cursor'); toast('Pin mode cancelled', 'info'); }
+        if (rulerMode) { deactivateRuler(); }
+        else if (measureMode) { measureMode = false; measureClicks = []; clearMeasureMarkers(); document.getElementById('btnMeasurePath').classList.remove('active'); if (!editMode) document.getElementById('editBanner').classList.remove('show'); const lcm = document.querySelector('.leaflet-container'); if (lcm) lcm.classList.remove('measure-cursor'); map.doubleClickZoom.enable(); renderVertexDots(); toast('Measure cancelled', 'info'); }
+        else if (pinMode) { pinMode = false; document.getElementById('btnPlacePin').classList.remove('active'); document.getElementById('editBanner').classList.remove('show'); const lc2 = document.querySelector('.leaflet-container'); if (lc2) lc2.classList.remove('pin-cursor'); map.doubleClickZoom.enable(); toast('Pin mode cancelled', 'info'); }
         else if (drawMode) { drawCoords = []; if (drawPreviewLayer) { map.removeLayer(drawPreviewLayer); drawPreviewLayer = null; } drawMode = false; document.getElementById('btnDrawLine').classList.remove('active'); document.getElementById('editBanner').classList.remove('show'); toast('Draw cancelled', 'info'); }
         else if (editMode) toggleEditMode();
         if (addPointMode) toggleAddPointMode();
@@ -3160,7 +3287,8 @@ document.addEventListener('keydown', (e) => {
         document.getElementById('pinTypeWindow').classList.remove('show');
         closeDistancePanel();
     }
-    if (e.key === 'Enter' && drawMode) { finishDraw(); }
+    if (e.key === 'Enter' && rulerMode && rulerCoords.length >= 2) { deactivateRuler(); }
+    else if (e.key === 'Enter' && drawMode) { finishDraw(); }
 });
 
 // === UTILS ===
@@ -3452,6 +3580,27 @@ window.startMeasureFromProps = function() {
     if (!measureMode) toggleMeasureMode();
 };
 
+
+// Render compact color swatch for folder selection (v2.1)
+function renderCompactColorForFolder(currentColor) {
+    document.getElementById('propColorCompactSwatch').style.background = currentColor;
+    if (currentColor === '#ffffff') document.getElementById('propColorCompactSwatch').style.borderColor = '#ddd';
+    else document.getElementById('propColorCompactSwatch').style.borderColor = '#ccc';
+    document.getElementById('propColorCompactHex').textContent = currentColor;
+    document.getElementById('propColorExpandCustom').value = currentColor;
+    // Render expand swatches
+    const expandContainer = document.getElementById('propColorExpandSwatches');
+    expandContainer.innerHTML = '';
+    GIS_COLORS.forEach(c => {
+        const s = document.createElement('div');
+        s.className = 'prop-color-swatch' + (c === currentColor ? ' active' : '');
+        s.style.background = c;
+        if (c === '#ffffff') s.style.border = '2px solid #ddd';
+        s.addEventListener('click', () => { updateSelectedColor(c); updateCompactColorDisplay(); updatePropsPanel(); });
+        expandContainer.appendChild(s);
+    });
+}
+
 function renderMultiColorSwatches(currentColor) {
     const swatchContainer = document.getElementById('propColorSwatches');
     swatchContainer.innerHTML = '';
@@ -3655,6 +3804,102 @@ window.printMap = function() {
     setTimeout(() => { window.print(); }, 200);
 };
 
+
+// === RULER POLYLINE TOOL (v2.1) ===
+let rulerMode = false;
+let rulerCoords = [];
+let rulerPolyline = null;
+let rulerCircles = [];
+let rulerPreviewLine = null;
+
+window.toggleRulerMode = function() {
+    if (rulerMode) {
+        deactivateRuler();
+        return;
+    }
+    // Deactivate other modes
+    if (drawMode) { drawCoords = []; if (drawPreviewLayer) { map.removeLayer(drawPreviewLayer); drawPreviewLayer = null; } drawMode = false; document.getElementById('btnDrawLine').classList.remove('active'); }
+    if (pinMode) { pinMode = false; document.getElementById('btnPlacePin').classList.remove('active'); const lc0 = document.querySelector('.leaflet-container'); if (lc0) lc0.classList.remove('pin-cursor'); map.doubleClickZoom.enable(); }
+    if (measureMode) { measureMode = false; measureClicks = []; clearMeasureMarkers(); document.getElementById('btnMeasurePath').classList.remove('active'); const lcm0 = document.querySelector('.leaflet-container'); if (lcm0) lcm0.classList.remove('measure-cursor'); map.doubleClickZoom.enable(); renderVertexDots(); }
+    if (addPointMode) { addPointMode = false; document.getElementById('btnAddPoint').classList.remove('active'); }
+
+    rulerMode = true;
+    rulerCoords = [];
+    document.getElementById('btnRuler').classList.add('active');
+    document.getElementById('editBanner').textContent = '📏 RULER — Click to add points, double-click or Enter to finish, Escape to cancel';
+    document.getElementById('editBanner').classList.add('show');
+    document.getElementById('rulerPanel').classList.add('show');
+    updateRulerDisplay();
+    const lc = document.querySelector('.leaflet-container');
+    if (lc) lc.classList.add('ruler-cursor');
+    map.doubleClickZoom.disable();
+    toast('Ruler: click to start measuring', 'info');
+};
+
+function deactivateRuler() {
+    rulerMode = false;
+    rulerCoords = [];
+    document.getElementById('btnRuler').classList.remove('active');
+    if (!editMode) document.getElementById('editBanner').classList.remove('show');
+    document.getElementById('rulerPanel').classList.remove('show');
+    // Remove all ruler visuals
+    if (rulerPolyline) { map.removeLayer(rulerPolyline); rulerPolyline = null; }
+    if (rulerPreviewLine) { map.removeLayer(rulerPreviewLine); rulerPreviewLine = null; }
+    rulerCircles.forEach(c => map.removeLayer(c));
+    rulerCircles = [];
+    const lc = document.querySelector('.leaflet-container');
+    if (lc) lc.classList.remove('ruler-cursor');
+    map.doubleClickZoom.enable();
+    toast('Ruler off', 'info');
+}
+
+function addRulerPoint(latlng) {
+    rulerCoords.push([latlng.lat, latlng.lng]);
+    // Add circle marker at point
+    const c = L.circleMarker(latlng, {
+        radius: 5, color: '#f59e0b', fillColor: '#fff', fillOpacity: 1, weight: 2.5, zIndexOffset: 2000
+    }).addTo(map);
+    rulerCircles.push(c);
+    // Update polyline
+    if (rulerPolyline) map.removeLayer(rulerPolyline);
+    if (rulerCoords.length >= 2) {
+        rulerPolyline = L.polyline(rulerCoords, {
+            color: '#f59e0b', weight: 3, opacity: 0.9, dashArray: '8,6'
+        }).addTo(map);
+    }
+    updateRulerDisplay();
+}
+
+function updateRulerDisplay() {
+    let dist = 0;
+    for (let i = 0; i < rulerCoords.length - 1; i++) {
+        dist += haversineDistance(rulerCoords[i][0], rulerCoords[i][1], rulerCoords[i+1][0], rulerCoords[i+1][1]);
+    }
+    document.getElementById('rulerDistance').textContent = formatDistance(dist);
+    const estDist = dist * (1 + fiberSlackPct / 100);
+    const pts = rulerCoords.length;
+    let info = pts + ' point' + (pts !== 1 ? 's' : '');
+    if (pts >= 2) info += ' — Est: ' + formatDistance(estDist) + ' (+' + fiberSlackPct + '% slack)';
+    else info += ' — Click to add points';
+    document.getElementById('rulerPoints').textContent = info;
+}
+
+// Hook into map click for ruler
+// We patch the main click handler below
+
+// Hook into map mousemove for ruler preview line
+map.on('mousemove', (e) => {
+    if (!rulerMode || rulerCoords.length === 0) {
+        if (rulerPreviewLine) { map.removeLayer(rulerPreviewLine); rulerPreviewLine = null; }
+        return;
+    }
+    const lastPt = rulerCoords[rulerCoords.length - 1];
+    if (rulerPreviewLine) map.removeLayer(rulerPreviewLine);
+    rulerPreviewLine = L.polyline([lastPt, [e.latlng.lat, e.latlng.lng]], {
+        color: '#f59e0b', weight: 2, opacity: 0.5, dashArray: '4,4'
+    }).addTo(map);
+});
+
 // === HAVERSINE DISTANCE UTILITY ===
 function haversineDistance(lat1, lon1, lat2, lon2) {
     const R = 6371; // km
@@ -3746,22 +3991,36 @@ window.closeDistancePanel = function() {
 
 
 // Shared measure click handler - called from both map click and polyline click
-function handleMeasureClick(latlng) {
+function handleMeasureClick(latlng, knownIdx, knownLayerId) {
     const l = projectData.layers[selectedLayerId];
     if (!l || l.type !== 'line') { toast('Select a line first', 'error'); return; }
-    const idx = findNearestVertexIdx(latlng, l.coords);
-    measureClicks.push(idx);
-    if (measureClicks.length === 1) {
-        // A-End (green)
+
+    // If knownIdx provided (from vertex dot click), use it directly; otherwise find nearest via pixel distance
+    let idx;
+    if (knownIdx !== undefined && knownLayerId === selectedLayerId) {
+        idx = knownIdx;
+    } else {
+        idx = findNearestVertexByPixel(latlng, l.coords);
+    }
+
+    // Place the marker at the exact vertex coordinates (not at the click point)
+    const vertexCoord = l.coords[idx];
+
+    if (measureClicks.length === 0) {
+        // FIRST CLICK: A-End (green)
+        measureClicks.push(idx);
         const icon = L.divIcon({ className: 'measure-marker-a', iconSize: [14,14], iconAnchor: [7,7] });
-        const m = L.marker(l.coords[idx], { icon, zIndexOffset: 3000 }).addTo(map);
+        const m = L.marker(vertexCoord, { icon, zIndexOffset: 3000 }).addTo(map);
         measureMarkers.push(m);
-        toast('A-End set at vertex ' + (idx+1) + ' — now click B-End', 'info');
-    } else if (measureClicks.length === 2) {
-        // B-End (red)
+        document.getElementById('editBanner').textContent = '📏 MEASURE — 🟢 A-End set at vertex ' + (idx+1) + ' — now click B-End (red)';
+        toast('🟢 A-End set at vertex ' + (idx+1) + ' — now click B-End', 'info');
+    } else if (measureClicks.length === 1) {
+        // SECOND CLICK: B-End (red)
+        measureClicks.push(idx);
         const icon = L.divIcon({ className: 'measure-marker-b', iconSize: [14,14], iconAnchor: [7,7] });
-        const m = L.marker(l.coords[idx], { icon, zIndexOffset: 3000 }).addTo(map);
+        const m = L.marker(vertexCoord, { icon, zIndexOffset: 3000 }).addTo(map);
         measureMarkers.push(m);
+
         // Calculate and display
         const aIdx = measureClicks[0], bIdx = measureClicks[1];
         const geo = calcPathDistance(l.coords, aIdx, bIdx);
@@ -3771,12 +4030,35 @@ function handleMeasureClick(latlng) {
         const segCoords = l.coords.slice(startI, endI + 1);
         measureLineLayer = L.polyline(segCoords, { color: '#f59e0b', weight: 5, opacity: 0.7, dashArray: '10,6' }).addTo(map);
         showDistancePanel({ title: 'A-End to B-End', geo, est, slack: fiberSlackPct, aEnd: aIdx, bEnd: bIdx });
+
         // Reset measure mode
         measureMode = false;
         document.getElementById('btnMeasurePath').classList.remove('active');
         if (!editMode) document.getElementById('editBanner').classList.remove('show');
+        const lc = document.querySelector('.leaflet-container');
+        if (lc) lc.classList.remove('measure-cursor');
+        map.doubleClickZoom.enable();
+        // Remove vertex dots if not toggled on
+        renderVertexDots();
         measureClicks = [];
+    } else {
+        // Safety: reset if somehow > 1
+        measureClicks = [];
+        handleMeasureClick(latlng, knownIdx, knownLayerId);
     }
+}
+
+// Find nearest vertex using PIXEL distance for accuracy (v2.0)
+function findNearestVertexByPixel(latlng, coords) {
+    const clickPt = map.latLngToContainerPoint(latlng);
+    let minD = Infinity, idx = 0;
+    coords.forEach((c, i) => {
+        const pt = map.latLngToContainerPoint(c);
+        const dx = clickPt.x - pt.x, dy = clickPt.y - pt.y;
+        const d = dx * dx + dy * dy; // squared pixel distance
+        if (d < minD) { minD = d; idx = i; }
+    });
+    return idx;
 }
 
 // === MEASURE A-END → B-END (Enhancement 5) ===
@@ -3797,12 +4079,22 @@ window.toggleMeasureMode = function() {
             document.getElementById('btnMeasurePath').classList.remove('active');
             return;
         }
-        document.getElementById('editBanner').textContent = '📏 MEASURE MODE — Click first point (A-End green), then second point (B-End red)';
+        document.getElementById('editBanner').textContent = '📏 MEASURE — Click on a vertex to set 🟢 A-End (origin), then 🔴 B-End (destination)';
         document.getElementById('editBanner').classList.add('show');
-        toast('Click on the map near the line: first click = A-End, second = B-End', 'info');
+        // Crosshair cursor + instant click (no dblclick delay)
+        const lc = document.querySelector('.leaflet-container');
+        if (lc) lc.classList.add('measure-cursor');
+        map.doubleClickZoom.disable();
+        // Show vertex dots for the selected line
+        renderVertexDots();
+        toast('Click a vertex dot: first = 🟢 A-End, second = 🔴 B-End', 'info');
     } else {
         clearMeasureMarkers();
         if (!editMode) document.getElementById('editBanner').classList.remove('show');
+        const lc = document.querySelector('.leaflet-container');
+        if (lc) lc.classList.remove('measure-cursor');
+        map.doubleClickZoom.enable();
+        renderVertexDots(); // Re-render (will hide dots if toggle is off)
         toast('Measure mode OFF', 'info');
     }
 };
@@ -3823,13 +4115,19 @@ function clearMeasureMarkers() {
     if (measureLineLayer) { map.removeLayer(measureLineLayer); measureLineLayer = null; }
 }
 
-function findNearestVertexIdx(latlng, coords) {
+// Keep the old haversine-based function as fallback
+function findNearestVertexIdxLegacy(latlng, coords) {
     let minD = Infinity, idx = 0;
     coords.forEach((c, i) => {
         const d = haversineDistance(latlng.lat, latlng.lng, c[0], c[1]);
         if (d < minD) { minD = d; idx = i; }
     });
     return idx;
+}
+
+// Original haversine-based (kept for non-measure uses)
+function findNearestVertexIdx(latlng, coords) {
+    return findNearestVertexByPixel(latlng, coords);
 }
 
 // Intercept map click for measure mode - added in the main click handler override below
