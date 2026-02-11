@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<!-- NexiMap KML Studio v3.0.1 - Simplified topology with 5-pass reduction and island bridging -->
+<!-- NexiMap KML Studio v3.0.4 - Simplified topology with 5-pass reduction and island bridging -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NexiMap KML Studio v3.0.1</title>
+<title>NexiMap KML Studio v3.0.4</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='2' width='28' height='28' rx='4' fill='%230096D6'/%3E%3Cpath d='M8 12L16 8L24 12L16 16Z' fill='white' opacity='0.9'/%3E%3Cpath d='M8 16L16 20L24 16' stroke='white' stroke-width='1.5' fill='none'/%3E%3Cpath d='M8 20L16 24L24 20' stroke='white' stroke-width='1.5' fill='none'/%3E%3C/svg%3E"/>
 <style>
 :root {
@@ -780,9 +780,15 @@ header {
 
 /* Pin marker on map */
 .pin-marker {
-    width: 24px; height: 36px; position: relative;
+    width: 24px; height: 36px; position: relative; overflow: visible;
 }
 .pin-marker svg { width: 24px; height: 36px; filter: drop-shadow(0 2px 3px rgba(0,0,0,0.3)); }
+.pin-label {
+    position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%);
+    white-space: nowrap; font-size: 11px; font-weight: 600;
+    text-shadow: -1px -1px 0 white, 1px -1px 0 white, -1px 1px 0 white, 1px 1px 0 white, 0 0 4px white;
+    pointer-events: none; padding-bottom: 2px;
+}
 
 /* Inline color swatches in properties */
 .prop-color-swatch {
@@ -1028,7 +1034,7 @@ header {
     <div class="app-logo">
         <svg width="20" height="20" viewBox="0 0 32 32"><rect x="2" y="2" width="28" height="28" rx="4" fill="#0096D6"/><path d="M8 12L16 8L24 12L16 16Z" fill="white" opacity="0.9"/><path d="M8 16L16 20L24 16" stroke="white" stroke-width="1.5" fill="none"/><path d="M8 20L16 24L24 20" stroke="white" stroke-width="1.5" fill="none"/></svg>
         NexiMap KML Studio
-        <span class="ver">v3.0.1</span>
+        <span class="ver">v3.0.4</span>
     </div>
 
     <!-- File Menu -->
@@ -1266,6 +1272,13 @@ header {
                     </div>
                 </div>
                 <div class="prop-pin-type-grid" id="propPinTypeGrid"></div>
+                <div class="prop-row" style="margin-top:6px;">
+                    <span class="prop-label">Show label</span>
+                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+                        <input type="checkbox" id="propPinShowLabel" checked onchange="togglePinLabel(this.checked)">
+                        <span style="font-size:10px;color:var(--text-muted);" id="propPinLabelStatus">Visible</span>
+                    </label>
+                </div>
             </div>
             <!-- Distance info for lines (Enhancement 4/5) -->
             <div class="prop-section" id="propDistance" style="display:none;">
@@ -2185,9 +2198,11 @@ function renderMapLayers() {
             });
         } else if (layer.type === 'point' && layer.coords.length > 0) {
             const pinSvg = getPinSvg(layer.pinType || 'default', layer.color);
+            const showLabel = layer.showLabel !== false; // default true
+            const labelHtml = showLabel ? '<div class="pin-label" style="color:' + (layer.color || '#e74c3c') + ';">' + (layer.name || '').replace(/</g, '&lt;') + '</div>' : '';
             const icon = L.divIcon({
                 className: 'pin-marker draggable-pin',
-                html: pinSvg,
+                html: labelHtml + pinSvg,
                 iconSize: [24, 36],
                 iconAnchor: [12, 36]
             });
@@ -2793,6 +2808,9 @@ function updatePropsPanel() {
         const pt = PIN_TYPES.find(p => p.id === (layer.pinType || 'default')) || PIN_TYPES[0];
         document.getElementById('propPinTypeCurrent').innerHTML = pt.svg(layer.color);
         document.getElementById('propPinTypeName').textContent = pt.name;
+        const showLabel = layer.showLabel !== false;
+        document.getElementById('propPinShowLabel').checked = showLabel;
+        document.getElementById('propPinLabelStatus').textContent = showLabel ? 'Visible' : 'Hidden';
         renderPropPinTypeGrid(layer);
     }
 
@@ -2944,7 +2962,7 @@ window.undoSimplify = function() {
 
 // === EDIT MODE ===
 window.toggleEditMode = function() {
-    // Deactivate measure mode if active
+    // Deactivate other modes
     if (measureMode) {
         measureMode = false; measureClicks = []; measureClickData = []; clearMeasureMarkers();
         document.getElementById('btnMeasurePath').classList.remove('active');
@@ -2952,25 +2970,40 @@ window.toggleEditMode = function() {
         if (lcm) lcm.classList.remove('measure-cursor');
         map.doubleClickZoom.enable();
     }
+    if (drawMode) {
+        drawCoords = []; if (drawPreviewLayer) { map.removeLayer(drawPreviewLayer); drawPreviewLayer = null; }
+        drawMode = false; document.getElementById('btnDrawLine').classList.remove('active');
+    }
+    if (addPointMode) {
+        addPointMode = false; document.getElementById('btnAddPoint').classList.remove('active');
+    }
     editMode = !editMode;
-    addPointMode = false;
     document.getElementById('btnEditMode').classList.toggle('active', editMode);
-    document.getElementById('btnAddPoint').classList.remove('active');
     document.getElementById('editBanner').classList.toggle('show', editMode);
+    if (editMode) document.getElementById('editBanner').textContent = '✏️ EDIT MODE — Drag vertex dots to reshape lines';
     renderMapLayers();
-    toast(editMode ? 'Edit mode ON' : 'Edit mode OFF', 'info');
+    renderVertexDots();
+    toast(editMode ? 'Edit mode ON — drag vertices to reshape' : 'Edit mode OFF', 'info');
 };
 
 window.toggleAddPointMode = function() {
     addPointMode = !addPointMode;
-    drawMode = false; document.getElementById('btnDrawLine').classList.remove('active');
-    if (addPointMode) { editMode = true; document.getElementById('btnEditMode').classList.add('active'); document.getElementById('editBanner').classList.add('show'); }
+    // Deactivate other modes
+    if (addPointMode) {
+        if (drawMode) { drawCoords = []; if (drawPreviewLayer) { map.removeLayer(drawPreviewLayer); drawPreviewLayer = null; } drawMode = false; document.getElementById('btnDrawLine').classList.remove('active'); }
+        if (editMode) { editMode = false; document.getElementById('btnEditMode').classList.remove('active'); }
+        if (measureMode) { measureMode = false; measureClicks = []; measureClickData = []; clearMeasureMarkers(); document.getElementById('btnMeasurePath').classList.remove('active'); const lcm = document.querySelector('.leaflet-container'); if (lcm) lcm.classList.remove('measure-cursor'); map.doubleClickZoom.enable(); }
+    }
     document.getElementById('btnAddPoint').classList.toggle('active', addPointMode);
+    document.getElementById('editBanner').classList.toggle('show', addPointMode);
+    if (addPointMode) document.getElementById('editBanner').textContent = '⊕ ADD POINT MODE — Click on map to add vertices to selected line';
     if (addPointMode && !selectedLayerId) {
         toast('Select a line layer first', 'error');
         addPointMode = false; document.getElementById('btnAddPoint').classList.remove('active');
+        document.getElementById('editBanner').classList.remove('show');
         return;
     }
+    renderVertexDots();
     toast(addPointMode ? 'Click on map to add vertices' : 'Add point mode OFF', 'info');
 };
 
@@ -2981,7 +3014,12 @@ let drawPreviewLayer = null;
 
 window.toggleDrawMode = function() {
     drawMode = !drawMode;
-    addPointMode = false; document.getElementById('btnAddPoint').classList.remove('active');
+    // Deactivate other modes
+    if (drawMode) {
+        if (addPointMode) { addPointMode = false; document.getElementById('btnAddPoint').classList.remove('active'); }
+        if (editMode) { editMode = false; document.getElementById('btnEditMode').classList.remove('active'); }
+        if (measureMode) { measureMode = false; measureClicks = []; measureClickData = []; clearMeasureMarkers(); document.getElementById('btnMeasurePath').classList.remove('active'); const lcm = document.querySelector('.leaflet-container'); if (lcm) lcm.classList.remove('measure-cursor'); map.doubleClickZoom.enable(); }
+    }
     document.getElementById('btnDrawLine').classList.toggle('active', drawMode);
     if (drawMode) {
         drawCoords = [];
@@ -3027,8 +3065,8 @@ function finishDraw() {
     drawCoords = [];
     drawMode = false;
     document.getElementById('btnDrawLine').classList.remove('active');
-    document.getElementById('editBanner').textContent = '✏️ EDIT MODE — Drag vertices to reposition • Right-click vertex to delete';
-    if (!editMode) document.getElementById('editBanner').classList.remove('show');
+    if (!editMode && !addPointMode) document.getElementById('editBanner').classList.remove('show');
+    renderVertexDots();
 }
 
 map.on('click', (e) => {
@@ -3910,7 +3948,7 @@ document.addEventListener('keydown', (e) => {
         if (rulerMode) { deactivateRuler(); }
         else if (measureMode) { measureMode = false; measureClicks = []; measureClickData = []; clearMeasureMarkers(); document.getElementById('btnMeasurePath').classList.remove('active'); if (!editMode) document.getElementById('editBanner').classList.remove('show'); const lcm = document.querySelector('.leaflet-container'); if (lcm) lcm.classList.remove('measure-cursor'); map.doubleClickZoom.enable(); renderVertexDots(); toast('Measure cancelled', 'info'); }
         else if (pinMode) { pinMode = false; document.getElementById('btnPlacePin').classList.remove('active'); document.getElementById('editBanner').classList.remove('show'); const lc2 = document.querySelector('.leaflet-container'); if (lc2) lc2.classList.remove('pin-cursor'); map.doubleClickZoom.enable(); toast('Pin mode cancelled', 'info'); }
-        else if (drawMode) { drawCoords = []; if (drawPreviewLayer) { map.removeLayer(drawPreviewLayer); drawPreviewLayer = null; } drawMode = false; document.getElementById('btnDrawLine').classList.remove('active'); document.getElementById('editBanner').classList.remove('show'); toast('Draw cancelled', 'info'); }
+        else if (drawMode) { drawCoords = []; if (drawPreviewLayer) { map.removeLayer(drawPreviewLayer); drawPreviewLayer = null; } drawMode = false; document.getElementById('btnDrawLine').classList.remove('active'); document.getElementById('editBanner').classList.remove('show'); renderVertexDots(); toast('Draw cancelled', 'info'); }
         else if (editMode) toggleEditMode();
         if (addPointMode) toggleAddPointMode();
         document.getElementById('colorPalette').classList.remove('show');
@@ -4100,6 +4138,14 @@ window.toggleMapLayerSelector = function() {
 window.updatePinDescription = function(val) {
     const l = projectData.layers[selectedLayerId];
     if (l && l.type === 'point') l.description = val;
+};
+
+window.togglePinLabel = function(show) {
+    const l = projectData.layers[selectedLayerId];
+    if (!l || l.type !== 'point') return;
+    l.showLabel = show;
+    document.getElementById('propPinLabelStatus').textContent = show ? 'Visible' : 'Hidden';
+    renderMapLayers();
 };
 
 
