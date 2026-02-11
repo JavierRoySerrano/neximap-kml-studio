@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<!-- NexiMap KML Studio v2.6.1 - Viewport bias option for geocoding search -->
+<!-- NexiMap KML Studio v2.6.2 - Viewport bias inline toggle + settings fix -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NexiMap KML Studio v2.6.1</title>
+<title>NexiMap KML Studio v2.6.2</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='2' width='28' height='28' rx='4' fill='%230096D6'/%3E%3Cpath d='M8 12L16 8L24 12L16 16Z' fill='white' opacity='0.9'/%3E%3Cpath d='M8 16L16 20L24 16' stroke='white' stroke-width='1.5' fill='none'/%3E%3Cpath d='M8 20L16 24L24 20' stroke='white' stroke-width='1.5' fill='none'/%3E%3C/svg%3E"/>
 <style>
 :root {
@@ -909,11 +909,30 @@ header {
 .toggle-switch input:checked + .toggle-slider { background: var(--accent); }
 .toggle-switch input:checked + .toggle-slider:before { transform: translateX(16px); }
 
-/* Viewport bias indicator in search box */
-.search-bias-hint {
-    font-size: 9px; color: var(--accent); padding: 0 6px;
-    display: flex; align-items: center; gap: 3px; white-space: nowrap;
+/* Viewport bias inline toggle next to search */
+.search-bias-toggle {
+    display: flex; align-items: center; gap: 4px; margin-left: 6px;
+    cursor: pointer; user-select: none; white-space: nowrap;
 }
+.search-bias-toggle .mini-toggle {
+    position: relative; width: 28px; height: 16px; flex-shrink: 0;
+}
+.search-bias-toggle .mini-toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
+.search-bias-toggle .mini-slider {
+    position: absolute; inset: 0; background: #ccc; border-radius: 16px;
+    cursor: pointer; transition: 0.2s;
+}
+.search-bias-toggle .mini-slider:before {
+    content: ''; position: absolute; width: 12px; height: 12px;
+    left: 2px; bottom: 2px; background: white; border-radius: 50%;
+    transition: 0.2s;
+}
+.search-bias-toggle .mini-toggle input:checked + .mini-slider { background: var(--accent); }
+.search-bias-toggle .mini-toggle input:checked + .mini-slider:before { transform: translateX(12px); }
+.search-bias-label {
+    font-size: 10px; color: var(--text-muted); transition: color 0.2s;
+}
+.search-bias-label.active { color: var(--accent); font-weight: 500; }
 /* Settings dialog overlay */
 .settings-overlay {
     position: fixed; inset: 0; background: rgba(0,0,0,0.3); z-index: 9998;
@@ -939,7 +958,7 @@ header {
     <div class="app-logo">
         <svg width="20" height="20" viewBox="0 0 32 32"><rect x="2" y="2" width="28" height="28" rx="4" fill="#0096D6"/><path d="M8 12L16 8L24 12L16 16Z" fill="white" opacity="0.9"/><path d="M8 16L16 20L24 16" stroke="white" stroke-width="1.5" fill="none"/><path d="M8 20L16 24L24 20" stroke="white" stroke-width="1.5" fill="none"/></svg>
         NexiMap KML Studio
-        <span class="ver">v2.6.1</span>
+        <span class="ver">v2.6.2</span>
     </div>
 
     <!-- File Menu -->
@@ -996,10 +1015,16 @@ header {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>
         </span>
         <input type="text" class="search-input" id="searchInput" placeholder="Search address or place…" autocomplete="off" spellcheck="false">
-                <span class="search-bias-hint" id="searchBiasHint" style="display:none;" title="Viewport bias active — results prioritise current map view">📍 Bias</span>
         <button class="search-clear" id="searchClear" onclick="clearSearch()">&times;</button>
         <div class="search-results" id="searchResults"></div>
     </div>
+    <label class="search-bias-toggle" title="Viewport bias — prioritise search results near current map view">
+        <div class="mini-toggle">
+            <input type="checkbox" id="biasToggleInline" onchange="toggleViewportBias(this.checked)">
+            <span class="mini-slider"></span>
+        </div>
+        <span class="search-bias-label" id="biasLabel">Bias</span>
+    </label>
 
     <span id="statusText">Ready</span>
 </header>
@@ -1426,11 +1451,11 @@ header {
         </div>
         <div style="border-top:1px solid var(--border);margin:10px 0;padding-top:10px;">
             <div class="settings-toggle">
-                <label>Search viewport bias</label>
-                <div class="toggle-switch">
+                <span style="font-size:12px;color:var(--text-secondary);flex:1;">Search viewport bias</span>
+                <label class="toggle-switch">
                     <input type="checkbox" id="settingsViewportBias">
                     <span class="toggle-slider"></span>
-                </div>
+                </label>
             </div>
             <p style="font-size:10px;color:var(--text-muted);margin-bottom:8px;">When enabled, address search prioritises results near the current map view. Useful when you're already zoomed into the area of interest.</p>
         </div>
@@ -3841,7 +3866,7 @@ window.saveSlackSettings = function() {
     fiberSlackPct = parseFloat(document.getElementById('settingsSlackPct').value) || 0;
     vertexMinZoom = parseInt(document.getElementById('settingsVertexZoom').value) || 13;
     vertexMaxDots = parseInt(document.getElementById('settingsVertexMax').value) || 2000;
-    viewportBiasEnabled = document.getElementById('settingsViewportBias').checked;
+    toggleViewportBias(document.getElementById('settingsViewportBias').checked);
     document.getElementById('settingsOverlay').classList.remove('show');
     renderVertexDots();
     updateVertexZoomHint();
@@ -4438,10 +4463,24 @@ async function buildKMZBlob() {
 
 
 // === GEOCODING SEARCH (v2.3) ===
-// Search viewport bias hint
+// Viewport bias toggle — syncs inline toggle, settings checkbox, and label
+window.toggleViewportBias = function(val) {
+    viewportBiasEnabled = val;
+    // Sync inline toggle
+    const inlineEl = document.getElementById('biasToggleInline');
+    if (inlineEl) inlineEl.checked = val;
+    // Sync settings dialog checkbox
+    const settingsEl = document.getElementById('settingsViewportBias');
+    if (settingsEl) settingsEl.checked = val;
+    // Update label style
+    const label = document.getElementById('biasLabel');
+    if (label) {
+        if (val) { label.classList.add('active'); label.textContent = '📍 Bias'; }
+        else { label.classList.remove('active'); label.textContent = 'Bias'; }
+    }
+};
 function updateSearchBiasHint() {
-    const hint = document.getElementById('searchBiasHint');
-    if (hint) hint.style.display = viewportBiasEnabled ? 'flex' : 'none';
+    toggleViewportBias(viewportBiasEnabled);
 }
 
 // Uses OpenStreetMap Nominatim — free, no API key, 1 req/sec rate limit
@@ -4506,7 +4545,7 @@ async function geocodeSearch(query) {
                 + '&bounded=0';
         }
         const resp = await fetch(url, {
-            headers: { 'User-Agent': 'NexiMapKMLStudio/2.6.1 (geocoding)' }
+            headers: { 'User-Agent': 'NexiMapKMLStudio/2.6.2 (geocoding)' }
         });
         if (!resp.ok) throw new Error('Search failed');
         const data = await resp.json();
