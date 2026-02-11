@@ -4867,12 +4867,13 @@ let _distModeStrict = true;
 function showDistancePanel(data) {
     _distPanelData = data;
     _distModeStrict = true;
-    renderDistancePanel();
+    _buildDistancePanel();
 }
 
-window.toggleDistMode = function(checked) {
-    _distModeStrict = !checked;
-    renderDistancePanel();
+window.toggleDistMode = function(toStrict) {
+    if (_distModeStrict === toStrict) return;
+    _distModeStrict = toStrict;
+    _updateDistValues();
     // Swap the polyline on the map
     const result = window._lastMeasureResult;
     if (result && measureLineLayer) {
@@ -4885,44 +4886,33 @@ window.toggleDistMode = function(checked) {
     }
 };
 
-function renderDistancePanel() {
+function _buildDistancePanel() {
     const data = _distPanelData;
     if (!data) return;
     const dp = document.getElementById('distancePanel');
     const dc = document.getElementById('distanceContent');
-    const isStrict = _distModeStrict;
-
-    const geo = isStrict ? data.geo : data.bestEstDist;
-    const est = geo * (1 + data.slack / 100);
-    const modeColor = isStrict ? 'var(--accent)' : '#e67e22';
 
     let html = '<div class="dist-row"><span class="dist-label" style="font-weight:600;">' + (data.title || 'Distance') + '</span></div>';
 
     // Mode toggle - only for cross-segment with gaps
     if (data.hasBestEst) {
         html += '<div class="dist-mode-toggle">';
-        html += '<label class="' + (isStrict ? 'active' : '') + '" onclick="document.getElementById(\'distModeSwitch\').checked=false;toggleDistMode(false);">';
-        html += '\ud83d\udd17 Strict Cable</label>';
-        html += '<div class="dist-mode-switch"><input type="checkbox" id="distModeSwitch" ' + (isStrict ? '' : 'checked') + ' onchange="toggleDistMode(this.checked)"><span class="slider"></span></div>';
-        html += '<label class="' + (isStrict ? '' : 'active') + '" onclick="document.getElementById(\'distModeSwitch\').checked=true;toggleDistMode(true);">';
-        html += '\ud83d\udcd0 Best Estimate</label>';
+        html += '<label id="distLabelStrict" class="active" style="cursor:pointer;">&#x1F517; Strict Cable</label>';
+        html += '<div class="dist-mode-switch"><input type="checkbox" id="distModeSwitch"><span class="slider"></span></div>';
+        html += '<label id="distLabelEst" style="cursor:pointer;">&#x1F4D0; Best Estimate</label>';
         html += '</div>';
     }
 
-    html += '<div class="dist-row"><span class="dist-label">Geometric distance:</span><span class="dist-value" style="color:' + modeColor + ';">' + formatDistance(geo) + '</span></div>';
+    html += '<div class="dist-row"><span class="dist-label">Geometric distance:</span><span class="dist-value" id="distValGeo">' + formatDistance(data.geo) + '</span></div>';
     html += '<div class="dist-row"><span class="dist-label">Fiber slack:</span><span class="dist-value">' + data.slack + '%</span></div>';
-    html += '<div class="dist-row"><span class="dist-label">Estimated distance:</span><span class="dist-value" style="color:' + modeColor + ';">' + formatDistance(est) + '</span></div>';
+    html += '<div class="dist-row"><span class="dist-label">Estimated distance:</span><span class="dist-value" id="distValEst">' + formatDistance(data.geo * (1 + data.slack / 100)) + '</span></div>';
 
     // Cable vs gap breakdown
     if (data.hasBestEst) {
         html += '<div style="margin-top:6px;border-top:1px solid #eee;padding-top:6px;">';
         html += '<div class="dist-row"><span class="dist-label">Cable segments:</span><span class="dist-value">' + formatDistance(data.cableDist) + '</span></div>';
         html += '<div class="dist-row"><span class="dist-label">Gap jumps (' + data.gapCount + '):</span><span class="dist-value orange">' + formatDistance(data.gapDist) + '</span></div>';
-        if (!isStrict) {
-            html += '<div class="dist-gap-info">\u2139\ufe0f Best Estimate uses straight-line distance for gaps instead of routing through cable loops</div>';
-        } else {
-            html += '<div class="dist-gap-info">\u26a0\ufe0f Strict mode routes through all cable segments including loops \u2014 actual path may be shorter</div>';
-        }
+        html += '<div class="dist-gap-info" id="distModeHint">&#x26A0;&#xFE0F; Strict mode routes through all cable segments including loops &#x2014; actual path may be shorter</div>';
         html += '</div>';
     }
 
@@ -4931,7 +4921,7 @@ function renderDistancePanel() {
         html += '<div class="dist-row"><span class="dist-label">A-End (green):</span><span class="dist-value green">vertex ' + (data.aEnd + 1) + '</span></div>';
         html += '<div class="dist-row"><span class="dist-label">B-End (red):</span><span class="dist-value" style="color:var(--danger);">vertex ' + (data.bEnd + 1) + '</span></div>';
         if (data.crossSegment) {
-            html += '<div class="dist-row"><span class="dist-label">Route type:</span><span class="dist-value" style="color:' + modeColor + ';">cross-segment</span></div>';
+            html += '<div class="dist-row"><span class="dist-label">Route type:</span><span class="dist-value" id="distValRoute" style="color:var(--accent);">cross-segment</span></div>';
         }
         if (data.segNames && data.segNames.length > 0) {
             html += '<div style="margin-top:6px;border-top:1px solid #eee;padding-top:6px;">';
@@ -4950,6 +4940,59 @@ function renderDistancePanel() {
     }
     dc.innerHTML = html;
     dp.classList.add('show');
+
+    // Attach toggle event listeners AFTER innerHTML is set
+    if (data.hasBestEst) {
+        const sw = document.getElementById('distModeSwitch');
+        const lblStrict = document.getElementById('distLabelStrict');
+        const lblEst = document.getElementById('distLabelEst');
+        if (sw) {
+            sw.addEventListener('change', function() {
+                toggleDistMode(!this.checked);
+            });
+        }
+        if (lblStrict) {
+            lblStrict.addEventListener('click', function() {
+                if (sw) sw.checked = false;
+                toggleDistMode(true);
+            });
+        }
+        if (lblEst) {
+            lblEst.addEventListener('click', function() {
+                if (sw) sw.checked = true;
+                toggleDistMode(false);
+            });
+        }
+    }
+}
+
+function _updateDistValues() {
+    const data = _distPanelData;
+    if (!data) return;
+    const isStrict = _distModeStrict;
+    const geo = isStrict ? data.geo : data.bestEstDist;
+    const est = geo * (1 + data.slack / 100);
+    const modeColor = isStrict ? 'var(--accent)' : '#e67e22';
+
+    const elGeo = document.getElementById('distValGeo');
+    const elEst = document.getElementById('distValEst');
+    const elRoute = document.getElementById('distValRoute');
+    const elHint = document.getElementById('distModeHint');
+    const lblStrict = document.getElementById('distLabelStrict');
+    const lblEst = document.getElementById('distLabelEst');
+    const sw = document.getElementById('distModeSwitch');
+
+    if (elGeo) { elGeo.textContent = formatDistance(geo); elGeo.style.color = modeColor; }
+    if (elEst) { elEst.textContent = formatDistance(est); elEst.style.color = modeColor; }
+    if (elRoute) { elRoute.style.color = modeColor; }
+    if (elHint) {
+        elHint.innerHTML = isStrict
+            ? '&#x26A0;&#xFE0F; Strict mode routes through all cable segments including loops &#x2014; actual path may be shorter'
+            : '&#x2139;&#xFE0F; Best Estimate uses straight-line distance for gaps instead of routing through cable loops';
+    }
+    if (lblStrict) { lblStrict.classList.toggle('active', isStrict); }
+    if (lblEst) { lblEst.classList.toggle('active', !isStrict); }
+    if (sw) { sw.checked = !isStrict; }
 }
 
 window.closeDistancePanel = function() {
