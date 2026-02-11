@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<!-- NexiMap KML Studio v2.9.7 - Ensure full topology connectivity with component bridging -->
+<!-- NexiMap KML Studio v2.9.8 - Dual measurement mode: Strict Cable Path vs Best Estimate -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NexiMap KML Studio v2.9.7</title>
+<title>NexiMap KML Studio v2.9.8</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='2' width='28' height='28' rx='4' fill='%230096D6'/%3E%3Cpath d='M8 12L16 8L24 12L16 16Z' fill='white' opacity='0.9'/%3E%3Cpath d='M8 16L16 20L24 16' stroke='white' stroke-width='1.5' fill='none'/%3E%3Cpath d='M8 20L16 24L24 20' stroke='white' stroke-width='1.5' fill='none'/%3E%3C/svg%3E"/>
 <style>
 :root {
@@ -890,6 +890,30 @@ header {
 .dist-row .dist-value { font-weight: 600; color: var(--text); font-family: monospace; }
 .dist-row .dist-value.green { color: var(--success); }
 .dist-row .dist-value.blue { color: var(--accent); }
+.dist-row .dist-value.orange { color: #e67e22; }
+.dist-mode-toggle {
+    display: flex; align-items: center; gap: 6px; margin: 8px 0 6px; padding: 6px 8px;
+    background: var(--bg-secondary); border-radius: 6px; border: 1px solid var(--border);
+}
+.dist-mode-toggle label { font-size: 10px; color: var(--text-secondary); cursor: pointer; flex: 1; text-align: center; }
+.dist-mode-toggle label.active { color: var(--text); font-weight: 600; }
+.dist-mode-switch {
+    position: relative; width: 36px; height: 18px; flex-shrink: 0;
+}
+.dist-mode-switch input { opacity: 0; width: 0; height: 0; }
+.dist-mode-switch .slider {
+    position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+    background: var(--accent); border-radius: 9px; cursor: pointer; transition: 0.2s;
+}
+.dist-mode-switch .slider:before {
+    content: ''; position: absolute; height: 14px; width: 14px; left: 2px; bottom: 2px;
+    background: white; border-radius: 50%; transition: 0.2s;
+}
+.dist-mode-switch input:checked + .slider { background: #e67e22; }
+.dist-mode-switch input:checked + .slider:before { transform: translateX(18px); }
+.dist-gap-info {
+    font-size: 9px; color: var(--text-muted); padding: 4px 0; font-style: italic;
+}
 
 /* Topology diagram modal */
 #topoModal {
@@ -1004,7 +1028,7 @@ header {
     <div class="app-logo">
         <svg width="20" height="20" viewBox="0 0 32 32"><rect x="2" y="2" width="28" height="28" rx="4" fill="#0096D6"/><path d="M8 12L16 8L24 12L16 16Z" fill="white" opacity="0.9"/><path d="M8 16L16 20L24 16" stroke="white" stroke-width="1.5" fill="none"/><path d="M8 20L16 24L24 20" stroke="white" stroke-width="1.5" fill="none"/></svg>
         NexiMap KML Studio
-        <span class="ver">v2.9.7</span>
+        <span class="ver">v2.9.8</span>
     </div>
 
     <!-- File Menu -->
@@ -4837,22 +4861,78 @@ window.ctxCalcDistance = function() {
     ctxTargetFolderId = null;
 };
 
+let _distPanelData = null;
+let _distModeStrict = true;
+
 function showDistancePanel(data) {
+    _distPanelData = data;
+    _distModeStrict = true;
+    renderDistancePanel();
+}
+
+window.toggleDistMode = function(checked) {
+    _distModeStrict = !checked;
+    renderDistancePanel();
+    // Swap the polyline on the map
+    const result = window._lastMeasureResult;
+    if (result && measureLineLayer) {
+        map.removeLayer(measureLineLayer);
+        const coords = _distModeStrict ? result.pathCoords : result.bestEstCoords;
+        if (coords && coords.length > 1) {
+            const color = _distModeStrict ? '#f59e0b' : '#e67e22';
+            measureLineLayer = L.polyline(coords, { color, weight: 6, opacity: 0.85, dashArray: '10,6' }).addTo(map);
+        }
+    }
+};
+
+function renderDistancePanel() {
+    const data = _distPanelData;
+    if (!data) return;
     const dp = document.getElementById('distancePanel');
     const dc = document.getElementById('distanceContent');
-    let html = '<div class="dist-row"><span class="dist-label">' + (data.title || 'Distance') + '</span></div>';
-    html += '<div class="dist-row"><span class="dist-label">Geometric distance:</span><span class="dist-value">' + formatDistance(data.geo) + '</span></div>';
+    const isStrict = _distModeStrict;
+
+    const geo = isStrict ? data.geo : data.bestEstDist;
+    const est = geo * (1 + data.slack / 100);
+    const modeColor = isStrict ? 'var(--accent)' : '#e67e22';
+
+    let html = '<div class="dist-row"><span class="dist-label" style="font-weight:600;">' + (data.title || 'Distance') + '</span></div>';
+
+    // Mode toggle - only for cross-segment with gaps
+    if (data.hasBestEst) {
+        html += '<div class="dist-mode-toggle">';
+        html += '<label class="' + (isStrict ? 'active' : '') + '" onclick="document.getElementById(\'distModeSwitch\').checked=false;toggleDistMode(false);">';
+        html += '\ud83d\udd17 Strict Cable</label>';
+        html += '<div class="dist-mode-switch"><input type="checkbox" id="distModeSwitch" ' + (isStrict ? '' : 'checked') + ' onchange="toggleDistMode(this.checked)"><span class="slider"></span></div>';
+        html += '<label class="' + (isStrict ? '' : 'active') + '" onclick="document.getElementById(\'distModeSwitch\').checked=true;toggleDistMode(true);">';
+        html += '\ud83d\udcd0 Best Estimate</label>';
+        html += '</div>';
+    }
+
+    html += '<div class="dist-row"><span class="dist-label">Geometric distance:</span><span class="dist-value" style="color:' + modeColor + ';">' + formatDistance(geo) + '</span></div>';
     html += '<div class="dist-row"><span class="dist-label">Fiber slack:</span><span class="dist-value">' + data.slack + '%</span></div>';
-    html += '<div class="dist-row"><span class="dist-label">Estimated distance:</span><span class="dist-value blue">' + formatDistance(data.est) + '</span></div>';
+    html += '<div class="dist-row"><span class="dist-label">Estimated distance:</span><span class="dist-value" style="color:' + modeColor + ';">' + formatDistance(est) + '</span></div>';
+
+    // Cable vs gap breakdown
+    if (data.hasBestEst) {
+        html += '<div style="margin-top:6px;border-top:1px solid #eee;padding-top:6px;">';
+        html += '<div class="dist-row"><span class="dist-label">Cable segments:</span><span class="dist-value">' + formatDistance(data.cableDist) + '</span></div>';
+        html += '<div class="dist-row"><span class="dist-label">Gap jumps (' + data.gapCount + '):</span><span class="dist-value orange">' + formatDistance(data.gapDist) + '</span></div>';
+        if (!isStrict) {
+            html += '<div class="dist-gap-info">\u2139\ufe0f Best Estimate uses straight-line distance for gaps instead of routing through cable loops</div>';
+        } else {
+            html += '<div class="dist-gap-info">\u26a0\ufe0f Strict mode routes through all cable segments including loops \u2014 actual path may be shorter</div>';
+        }
+        html += '</div>';
+    }
+
     if (data.aEnd !== undefined) {
         html += '<div style="margin-top:6px;border-top:1px solid #eee;padding-top:6px;">';
         html += '<div class="dist-row"><span class="dist-label">A-End (green):</span><span class="dist-value green">vertex ' + (data.aEnd + 1) + '</span></div>';
         html += '<div class="dist-row"><span class="dist-label">B-End (red):</span><span class="dist-value" style="color:var(--danger);">vertex ' + (data.bEnd + 1) + '</span></div>';
         if (data.crossSegment) {
-            html += '<div class="dist-row"><span class="dist-label">Route type:</span><span class="dist-value" style="color:var(--accent);">cross-segment</span></div>';
+            html += '<div class="dist-row"><span class="dist-label">Route type:</span><span class="dist-value" style="color:' + modeColor + ';">cross-segment</span></div>';
         }
-        html += '<div class="dist-row"><span class="dist-label">Path distance:</span><span class="dist-value">' + formatDistance(data.geo) + '</span></div>';
-        html += '<div class="dist-row"><span class="dist-label">Estimated (+'+ data.slack +'%):</span><span class="dist-value blue">' + formatDistance(data.est) + '</span></div>';
         if (data.segNames && data.segNames.length > 0) {
             html += '<div style="margin-top:6px;border-top:1px solid #eee;padding-top:6px;">';
             html += '<div class="dist-row"><span class="dist-label" style="font-weight:600;">Segments (' + data.segNames.length + '):</span></div>';
@@ -4955,65 +5035,126 @@ window.showTopologyDiagram = function() {
         tEdges.push({ from: nodeMap.get(sId), to: nodeMap.get(eId), type: 'internal', dist: iDist, color, label: layer.name });
     });
 
-    // Gap edges — connect each endpoint to K nearest endpoints of DIFFERENT layers
-    const K_NEAREST = 3; // connect to top-K nearest neighbors for robust connectivity
+    // ─── Union-Find for O(1) amortized connectivity checks ───
+    const ufParent = new Int32Array(tNodes.length);
+    const ufRank = new Uint8Array(tNodes.length);
+    for (let i = 0; i < tNodes.length; i++) ufParent[i] = i;
+    function ufFind(x) { while (ufParent[x] !== x) { ufParent[x] = ufParent[ufParent[x]]; x = ufParent[x]; } return x; }
+    function ufUnion(a, b) {
+        a = ufFind(a); b = ufFind(b);
+        if (a === b) return false;
+        if (ufRank[a] < ufRank[b]) [a, b] = [b, a];
+        ufParent[b] = a;
+        if (ufRank[a] === ufRank[b]) ufRank[a]++;
+        return true;
+    }
+
+    // Internal edges already connect S<->E of same layer
+    tEdges.forEach(e => ufUnion(e.from, e.to));
+
+    // ─── Spatial grid for fast nearest-neighbor lookup ───
+    const GRID_RES = 0.5; // ~50km grid cells
+    const spatialGrid = new Map();
     for (let i = 0; i < tNodes.length; i++) {
-        // Collect all distances to nodes of different layers
-        const candidates = [];
-        for (let j = 0; j < tNodes.length; j++) {
-            if (tNodes[j].layerId === tNodes[i].layerId) continue;
-            const d = haversineDistance(tNodes[i].geoLat, tNodes[i].geoLng, tNodes[j].geoLat, tNodes[j].geoLng);
-            candidates.push({ j, d });
+        const gx = Math.floor(tNodes[i].geoLng / GRID_RES);
+        const gy = Math.floor(tNodes[i].geoLat / GRID_RES);
+        const key = gx + ',' + gy;
+        if (!spatialGrid.has(key)) spatialGrid.set(key, []);
+        spatialGrid.get(key).push(i);
+    }
+    function getNearbyNodes(idx, radius) {
+        const n = tNodes[idx];
+        const rCells = Math.ceil(radius / GRID_RES) + 1;
+        const gx0 = Math.floor(n.geoLng / GRID_RES);
+        const gy0 = Math.floor(n.geoLat / GRID_RES);
+        const nearby = [];
+        for (let dx = -rCells; dx <= rCells; dx++) {
+            for (let dy = -rCells; dy <= rCells; dy++) {
+                const cell = spatialGrid.get((gx0 + dx) + ',' + (gy0 + dy));
+                if (cell) for (const j of cell) if (j !== idx) nearby.push(j);
+            }
         }
-        candidates.sort((a, b) => a.d - b.d);
-        const topK = candidates.slice(0, K_NEAREST);
-        for (const { j: bestJ, d: bestDist } of topK) {
-            const exists = tEdges.some(e => e.type === 'gap' && ((e.from === i && e.to === bestJ) || (e.from === bestJ && e.to === i)));
-            if (!exists) {
+        return nearby;
+    }
+
+    // ─── Gap edges: connect each endpoint to K nearest from DIFFERENT layers ───
+    const K_NEAREST = 3;
+    const edgeSet = new Set();
+    tEdges.forEach(e => { edgeSet.add(e.from + ':' + e.to); edgeSet.add(e.to + ':' + e.from); });
+
+    for (let i = 0; i < tNodes.length; i++) {
+        // Search nearby grid cells first (expanding radius if needed)
+        let candidates = [];
+        for (let r = 1; r <= 20 && candidates.length < K_NEAREST; r++) {
+            const nearby = getNearbyNodes(i, r);
+            candidates = [];
+            for (const j of nearby) {
+                if (tNodes[j].layerId === tNodes[i].layerId) continue;
+                const d = haversineDistance(tNodes[i].geoLat, tNodes[i].geoLng, tNodes[j].geoLat, tNodes[j].geoLng);
+                candidates.push({ j, d });
+            }
+            candidates.sort((a, b) => a.d - b.d);
+        }
+        // Fallback: brute-force if grid search found nothing (very sparse data)
+        if (candidates.length < K_NEAREST) {
+            candidates = [];
+            for (let j = 0; j < tNodes.length; j++) {
+                if (tNodes[j].layerId === tNodes[i].layerId) continue;
+                const d = haversineDistance(tNodes[i].geoLat, tNodes[i].geoLng, tNodes[j].geoLat, tNodes[j].geoLng);
+                candidates.push({ j, d });
+            }
+            candidates.sort((a, b) => a.d - b.d);
+        }
+        for (const { j: bestJ, d: bestDist } of candidates.slice(0, K_NEAREST)) {
+            const eKey = Math.min(i, bestJ) + ':' + Math.max(i, bestJ);
+            if (!edgeSet.has(i + ':' + bestJ)) {
                 tEdges.push({ from: i, to: bestJ, type: 'gap', dist: bestDist, color: '#aaa', label: 'gap ' + bestDist.toFixed(1) + 'km' });
+                edgeSet.add(i + ':' + bestJ); edgeSet.add(bestJ + ':' + i);
+                ufUnion(i, bestJ);
             }
         }
     }
 
-    // Ensure full connectivity — bridge any disconnected components
-    function topoGetComponents() {
-        const visited = new Set();
-        const comps = [];
+    // ─── Bridge disconnected components using Union-Find (no BFS needed) ───
+    // Collect all inter-component candidate edges sorted by distance
+    let componentCount = new Set(Array.from({length: tNodes.length}, (_, i) => ufFind(i))).size;
+    if (componentCount > 1) {
+        // Build list of component representatives
+        const compMap = new Map(); // root -> [node indices]
         for (let i = 0; i < tNodes.length; i++) {
-            if (visited.has(i)) continue;
-            const comp = new Set();
-            const q = [i];
-            while (q.length > 0) {
-                const c = q.shift();
-                if (comp.has(c)) continue;
-                comp.add(c); visited.add(c);
-                for (const e of tEdges) {
-                    if (e.from === c && !comp.has(e.to)) q.push(e.to);
-                    if (e.to === c && !comp.has(e.from)) q.push(e.from);
-                }
-            }
-            comps.push(comp);
+            const r = ufFind(i);
+            if (!compMap.has(r)) compMap.set(r, []);
+            compMap.get(r).push(i);
         }
-        return comps;
-    }
+        const compRoots = Array.from(compMap.keys());
 
-    let comps = topoGetComponents();
-    let bridgeAttempts = 0;
-    while (comps.length > 1 && bridgeAttempts < 100) {
-        bridgeAttempts++;
-        let bestGap = Infinity, bestFrom = -1, bestTo = -1;
-        const compA = comps[0];
-        for (let ci = 1; ci < comps.length; ci++) {
-            for (const nIdx of compA) {
-                for (const mIdx of comps[ci]) {
-                    const d = haversineDistance(tNodes[nIdx].geoLat, tNodes[nIdx].geoLng, tNodes[mIdx].geoLat, tNodes[mIdx].geoLng);
-                    if (d < bestGap) { bestGap = d; bestFrom = nIdx; bestTo = mIdx; }
+        // For each pair of components, find the closest node pair using spatial proximity
+        const bridgeCandidates = [];
+        for (let ci = 0; ci < compRoots.length; ci++) {
+            for (let cj = ci + 1; cj < compRoots.length; cj++) {
+                let bestDist = Infinity, bestI = -1, bestJ = -1;
+                const nodesA = compMap.get(compRoots[ci]);
+                const nodesB = compMap.get(compRoots[cj]);
+                // Use smaller component for outer loop
+                const [smaller, larger] = nodesA.length <= nodesB.length ? [nodesA, nodesB] : [nodesB, nodesA];
+                for (const a of smaller) {
+                    for (const b of larger) {
+                        const d = haversineDistance(tNodes[a].geoLat, tNodes[a].geoLng, tNodes[b].geoLat, tNodes[b].geoLng);
+                        if (d < bestDist) { bestDist = d; bestI = a; bestJ = b; }
+                    }
                 }
+                if (bestI >= 0) bridgeCandidates.push({ i: bestI, j: bestJ, d: bestDist });
             }
         }
-        if (bestFrom < 0) break;
-        tEdges.push({ from: bestFrom, to: bestTo, type: 'gap', dist: bestGap, color: '#e67e22', label: 'bridge ' + bestGap.toFixed(1) + 'km' });
-        comps = topoGetComponents();
+        // Sort by distance and greedily bridge using Kruskal-style MST
+        bridgeCandidates.sort((a, b) => a.d - b.d);
+        for (const bc of bridgeCandidates) {
+            if (ufFind(bc.i) !== ufFind(bc.j)) {
+                tEdges.push({ from: bc.i, to: bc.j, type: 'gap', dist: bc.d, color: '#e67e22', label: 'bridge ' + bc.d.toFixed(1) + 'km' });
+                edgeSet.add(bc.i + ':' + bc.j); edgeSet.add(bc.j + ':' + bc.i);
+                ufUnion(bc.i, bc.j);
+            }
+        }
     }
 
     // Position nodes using geographic coordinates projected to screen
@@ -5284,7 +5425,10 @@ function handleMeasureClick(latlng, knownIdx, knownLayerId) {
         console.log('Measure result: segments=' + result.segments + ', usedLayers=' + (result.usedLayerIds||[]).length + ', dist=' + result.distance.toFixed(2) + 'km');
         if (result.segNames) console.log('Segments:', result.segNames.join(' → '));
 
-        // Draw highlight polyline
+        // Store result globally for mode toggling
+        window._lastMeasureResult = result;
+
+        // Draw highlight polyline (strict cable path by default)
         if (result.pathCoords.length > 1) {
             measureLineLayer = L.polyline(result.pathCoords, { color: '#f59e0b', weight: 6, opacity: 0.85, dashArray: '10,6' }).addTo(map);
         }
@@ -5295,13 +5439,19 @@ function handleMeasureClick(latlng, knownIdx, knownLayerId) {
         }
 
         const est = result.distance * (1 + fiberSlackPct / 100);
+        const hasBestEst = result.gapCount > 0 && result.bestEstDist > 0;
         showDistancePanel({
             title: 'A-End to B-End' + (result.segments > 1 ? ' (' + result.segments + ' segments)' : ''),
             geo: result.distance, est, slack: fiberSlackPct,
             aEnd: a.vertexIdx, bEnd: b.vertexIdx,
             crossSegment: result.segments > 1,
             segNames: result.segNames || [],
-            segDistances: result.segDistances || []
+            segDistances: result.segDistances || [],
+            hasBestEst,
+            cableDist: result.cableDist || 0,
+            gapDist: result.gapDist || 0,
+            gapCount: result.gapCount || 0,
+            bestEstDist: result.bestEstDist || 0
         });
 
         // Reset measure mode
@@ -5368,19 +5518,63 @@ function calcCrossSegmentDistance(a, b) {
         tEdges.get(eId).push({ to: sId, cost: iDist, type: 'internal', layerId: layer.id });
     }
 
-    // ─── STEP 3: Gap edges — connect each endpoint to K nearest endpoints of DIFFERENT layers ───
+    // ─── STEP 3: Gap edges with Union-Find + spatial grid ───
     const nodeArr = Array.from(tNodes.entries());
-    const K_GAP = 3; // connect to top-K nearest neighbors for robust connectivity
-    for (const [nId, nInfo] of nodeArr) {
-        const candidates = [];
-        for (const [mId, mInfo] of nodeArr) {
-            if (mInfo.layerId === nInfo.layerId) continue;
-            const d = haversineDistance(nInfo.coord[0], nInfo.coord[1], mInfo.coord[0], mInfo.coord[1]);
-            candidates.push({ mId, d });
+    const nodeIds = nodeArr.map(e => e[0]);
+    const K_GAP = 3;
+
+    // Union-Find for fast connectivity
+    const ufMap = new Map();
+    for (const [nId] of nodeArr) ufMap.set(nId, nId);
+    function djFind(x) { while (ufMap.get(x) !== x) { ufMap.set(x, ufMap.get(ufMap.get(x))); x = ufMap.get(x); } return x; }
+    function djUnion(a, b) { a = djFind(a); b = djFind(b); if (a === b) return false; ufMap.set(b, a); return true; }
+
+    // Internal edges already connect S<->E
+    for (const [nId] of nodeArr) {
+        for (const e of tEdges.get(nId)) {
+            if (e.type === 'internal') djUnion(nId, e.to);
         }
-        candidates.sort((a, b) => a.d - b.d);
-        const topK = candidates.slice(0, K_GAP);
-        for (const { mId: bestId, d: bestDist } of topK) {
+    }
+
+    // Spatial grid for nearest-neighbor
+    const DJ_GRID = 0.5;
+    const djGrid = new Map();
+    for (const [nId, nInfo] of nodeArr) {
+        const key = Math.floor(nInfo.coord[1] / DJ_GRID) + ',' + Math.floor(nInfo.coord[0] / DJ_GRID);
+        if (!djGrid.has(key)) djGrid.set(key, []);
+        djGrid.get(key).push([nId, nInfo]);
+    }
+
+    for (const [nId, nInfo] of nodeArr) {
+        const gx0 = Math.floor(nInfo.coord[1] / DJ_GRID);
+        const gy0 = Math.floor(nInfo.coord[0] / DJ_GRID);
+        let candidates = [];
+        for (let r = 1; r <= 20 && candidates.length < K_GAP; r++) {
+            candidates = [];
+            for (let dx = -r; dx <= r; dx++) {
+                for (let dy = -r; dy <= r; dy++) {
+                    const cell = djGrid.get((gx0 + dx) + ',' + (gy0 + dy));
+                    if (!cell) continue;
+                    for (const [mId, mInfo] of cell) {
+                        if (mInfo.layerId === nInfo.layerId) continue;
+                        const d = haversineDistance(nInfo.coord[0], nInfo.coord[1], mInfo.coord[0], mInfo.coord[1]);
+                        candidates.push({ mId, d });
+                    }
+                }
+            }
+            candidates.sort((a, b) => a.d - b.d);
+        }
+        // Fallback brute-force for very sparse regions
+        if (candidates.length < K_GAP) {
+            candidates = [];
+            for (const [mId, mInfo] of nodeArr) {
+                if (mInfo.layerId === nInfo.layerId) continue;
+                const d = haversineDistance(nInfo.coord[0], nInfo.coord[1], mInfo.coord[0], mInfo.coord[1]);
+                candidates.push({ mId, d });
+            }
+            candidates.sort((a, b) => a.d - b.d);
+        }
+        for (const { mId: bestId, d: bestDist } of candidates.slice(0, K_GAP)) {
             const gapCost = bestDist * 100;
             if (!tEdges.get(nId).some(e => e.to === bestId && e.type === 'gap')) {
                 tEdges.get(nId).push({ to: bestId, cost: gapCost, type: 'gap', realDist: bestDist });
@@ -5388,52 +5582,48 @@ function calcCrossSegmentDistance(a, b) {
             if (!tEdges.get(bestId).some(e => e.to === nId && e.type === 'gap')) {
                 tEdges.get(bestId).push({ to: nId, cost: gapCost, type: 'gap', realDist: bestDist });
             }
+            djUnion(nId, bestId);
         }
     }
 
-    // ─── STEP 4: Ensure full connectivity — bridge any disconnected components ───
-    function getComponents() {
-        const visited = new Set();
-        const comps = [];
-        for (const [nId] of tNodes) {
-            if (visited.has(nId)) continue;
-            const comp = new Set();
-            const q = [nId];
-            while (q.length > 0) {
-                const c = q.shift();
-                if (comp.has(c)) continue;
-                comp.add(c); visited.add(c);
-                for (const e of (tEdges.get(c) || [])) {
-                    if (!comp.has(e.to)) q.push(e.to);
-                }
-            }
-            comps.push(comp);
+    // ─── STEP 4: Bridge disconnected components (Kruskal-style with Union-Find) ───
+    const compRoots = new Set(nodeIds.map(id => djFind(id)));
+    if (compRoots.size > 1) {
+        // Group nodes by component
+        const compNodes = new Map();
+        for (const nId of nodeIds) {
+            const r = djFind(nId);
+            if (!compNodes.has(r)) compNodes.set(r, []);
+            compNodes.get(r).push(nId);
         }
-        return comps;
-    }
-
-    let comps = getComponents();
-    let bridgeAttempts = 0;
-    while (comps.length > 1 && bridgeAttempts < 50) {
-        bridgeAttempts++;
-        let bestGap = Infinity, bestFrom = null, bestTo = null;
-        // Only check between first component and all others (greedy merge)
-        const compA = comps[0];
-        for (let ci = 1; ci < comps.length; ci++) {
-            for (const nId of compA) {
-                const nInfo = tNodes.get(nId);
-                for (const mId of comps[ci]) {
-                    const mInfo = tNodes.get(mId);
-                    const d = haversineDistance(nInfo.coord[0], nInfo.coord[1], mInfo.coord[0], mInfo.coord[1]);
-                    if (d < bestGap) { bestGap = d; bestFrom = nId; bestTo = mId; }
+        const roots = Array.from(compNodes.keys());
+        // Find shortest bridge between each pair of components
+        const bridges = [];
+        for (let ci = 0; ci < roots.length; ci++) {
+            for (let cj = ci + 1; cj < roots.length; cj++) {
+                let bestD = Infinity, bestA = null, bestB = null;
+                const nA = compNodes.get(roots[ci]), nB = compNodes.get(roots[cj]);
+                const [smaller, larger] = nA.length <= nB.length ? [nA, nB] : [nB, nA];
+                for (const a of smaller) {
+                    const aI = tNodes.get(a);
+                    for (const b of larger) {
+                        const bI = tNodes.get(b);
+                        const d = haversineDistance(aI.coord[0], aI.coord[1], bI.coord[0], bI.coord[1]);
+                        if (d < bestD) { bestD = d; bestA = a; bestB = b; }
+                    }
                 }
+                if (bestA) bridges.push({ a: bestA, b: bestB, d: bestD });
             }
         }
-        if (!bestFrom) break;
-        const bridgeCost = bestGap * 100;
-        tEdges.get(bestFrom).push({ to: bestTo, cost: bridgeCost, type: 'gap', realDist: bestGap });
-        tEdges.get(bestTo).push({ to: bestFrom, cost: bridgeCost, type: 'gap', realDist: bestGap });
-        comps = getComponents();
+        bridges.sort((a, b) => a.d - b.d);
+        for (const br of bridges) {
+            if (djFind(br.a) !== djFind(br.b)) {
+                const gapCost = br.d * 100;
+                tEdges.get(br.a).push({ to: br.b, cost: gapCost, type: 'gap', realDist: br.d });
+                tEdges.get(br.b).push({ to: br.a, cost: gapCost, type: 'gap', realDist: br.d });
+                djUnion(br.a, br.b);
+            }
+        }
     }
 
     // ─── STEP 5: Insert virtual nodes for A and B measurement points ───
@@ -5563,7 +5753,62 @@ function calcCrossSegmentDistance(a, b) {
         }
     }
 
-    return { distance: totalDist, pathCoords, segments: usedLayerIds.length, usedLayerIds, segNames, segDistances };
+    // Compute dual-mode: cable vs gap breakdown + best estimate path
+    let cableDist = 0, gapDist = 0;
+    const gapDetails = [];
+    for (let i = 0; i < pathNodeIds.length - 1; i++) {
+        const toId = pathNodeIds[i + 1];
+        const pe = prev.get(toId);
+        if (!pe) continue;
+        const edge = pe.edge;
+        if (edge.type === 'gap') {
+            const fromCoord = tNodes.get(pathNodeIds[i]).coord;
+            const toCoord = tNodes.get(toId).coord;
+            const gd = edge.realDist || haversineDistance(fromCoord[0], fromCoord[1], toCoord[0], toCoord[1]);
+            gapDist += gd;
+            gapDetails.push({ fromCoord, toCoord, dist: gd });
+        }
+    }
+    cableDist = totalDist - gapDist;
+
+    // Best estimate: cable portions + haversine for gaps (skip loop traversal)
+    let bestEstCoords = [];
+    let bestEstDist = 0;
+    for (let i = 0; i < pathNodeIds.length - 1; i++) {
+        const fromId = pathNodeIds[i];
+        const toId = pathNodeIds[i + 1];
+        const pe = prev.get(toId);
+        if (!pe) continue;
+        const edge = pe.edge;
+        if (edge.type === 'internal' && edge.layerId) {
+            const layer = projectData.layers[edge.layerId];
+            if (!layer) continue;
+            const fromInfo = tNodes.get(fromId);
+            const toInfo = tNodes.get(toId);
+            let fromIdx = fromInfo.end === 's' ? 0 : fromInfo.end === 'e' ? layer.coords.length - 1 : fromInfo.vertexIdx;
+            let toIdx = toInfo.end === 's' ? 0 : toInfo.end === 'e' ? layer.coords.length - 1 : toInfo.vertexIdx;
+            const sI = Math.min(fromIdx, toIdx), eI = Math.max(fromIdx, toIdx);
+            let slice = layer.coords.slice(sI, eI + 1);
+            if (fromIdx > toIdx) slice = slice.slice().reverse();
+            let sd = 0;
+            for (let j = 0; j < slice.length - 1; j++) sd += haversineDistance(slice[j][0], slice[j][1], slice[j+1][0], slice[j+1][1]);
+            bestEstCoords = bestEstCoords.concat(slice);
+            bestEstDist += sd;
+        } else if (edge.type === 'gap') {
+            const fc = tNodes.get(fromId).coord;
+            const tc = tNodes.get(toId).coord;
+            const gd = haversineDistance(fc[0], fc[1], tc[0], tc[1]);
+            bestEstCoords.push(fc, tc);
+            bestEstDist += gd;
+        }
+    }
+
+    return {
+        distance: totalDist, pathCoords, segments: usedLayerIds.length,
+        usedLayerIds, segNames, segDistances,
+        cableDist, gapDist, gapDetails, gapCount: gapDetails.length,
+        bestEstDist, bestEstCoords
+    };
 }
 
 // Get all line layers in folder order (depth-first, items order) — kept for other uses
