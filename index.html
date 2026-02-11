@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<!-- NexiMap KML Studio v2.7.2 - Cross-folder measurement: trace route across any connected visible segments -->
+<!-- NexiMap KML Studio v2.7.3 - Removed measure button from properties panel (toolbar-only) -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NexiMap KML Studio v2.7.2</title>
+<title>NexiMap KML Studio v2.7.3</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='2' width='28' height='28' rx='4' fill='%230096D6'/%3E%3Cpath d='M8 12L16 8L24 12L16 16Z' fill='white' opacity='0.9'/%3E%3Cpath d='M8 16L16 20L24 16' stroke='white' stroke-width='1.5' fill='none'/%3E%3Cpath d='M8 20L16 24L24 20' stroke='white' stroke-width='1.5' fill='none'/%3E%3C/svg%3E"/>
 <style>
 :root {
@@ -958,7 +958,7 @@ header {
     <div class="app-logo">
         <svg width="20" height="20" viewBox="0 0 32 32"><rect x="2" y="2" width="28" height="28" rx="4" fill="#0096D6"/><path d="M8 12L16 8L24 12L16 16Z" fill="white" opacity="0.9"/><path d="M8 16L16 20L24 16" stroke="white" stroke-width="1.5" fill="none"/><path d="M8 20L16 24L24 20" stroke="white" stroke-width="1.5" fill="none"/></svg>
         NexiMap KML Studio
-        <span class="ver">v2.7.2</span>
+        <span class="ver">v2.7.3</span>
     </div>
 
     <!-- File Menu -->
@@ -1175,9 +1175,7 @@ header {
                     <span class="prop-label">Slack</span>
                     <span id="propSlackPct" style="font-size:11px;color:var(--text-muted);">—</span>
                 </div>
-                <div style="margin-top:6px;">
-                    <button class="prop-btn" onclick="startMeasureFromProps()" style="width:100%;font-size:10px;">🟢🔴 Measure A-End → B-End</button>
-                </div>
+
             </div>
             <div class="prop-section" id="propStyle" style="display:none;">
                 <h4>Style</h4>
