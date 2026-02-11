@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<!-- NexiMap KML Studio v2.7.5 - Glow effect on measured segments + dimming non-used -->
+<!-- NexiMap KML Studio v2.8 - Dijkstra shortest-gap path finding for cross-segment measurement -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NexiMap KML Studio v2.7.5</title>
+<title>NexiMap KML Studio v2.8</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='2' width='28' height='28' rx='4' fill='%230096D6'/%3E%3Cpath d='M8 12L16 8L24 12L16 16Z' fill='white' opacity='0.9'/%3E%3Cpath d='M8 16L16 20L24 16' stroke='white' stroke-width='1.5' fill='none'/%3E%3Cpath d='M8 20L16 24L24 20' stroke='white' stroke-width='1.5' fill='none'/%3E%3C/svg%3E"/>
 <style>
 :root {
@@ -958,7 +958,7 @@ header {
     <div class="app-logo">
         <svg width="20" height="20" viewBox="0 0 32 32"><rect x="2" y="2" width="28" height="28" rx="4" fill="#0096D6"/><path d="M8 12L16 8L24 12L16 16Z" fill="white" opacity="0.9"/><path d="M8 16L16 20L24 16" stroke="white" stroke-width="1.5" fill="none"/><path d="M8 20L16 24L24 20" stroke="white" stroke-width="1.5" fill="none"/></svg>
         NexiMap KML Studio
-        <span class="ver">v2.7.5</span>
+        <span class="ver">v2.8</span>
     </div>
 
     <!-- File Menu -->
@@ -4770,6 +4770,19 @@ function showDistancePanel(data) {
         }
         html += '<div class="dist-row"><span class="dist-label">Path distance:</span><span class="dist-value">' + formatDistance(data.geo) + '</span></div>';
         html += '<div class="dist-row"><span class="dist-label">Estimated (+'+ data.slack +'%):</span><span class="dist-value blue">' + formatDistance(data.est) + '</span></div>';
+        if (data.segNames && data.segNames.length > 0) {
+            html += '<div style="margin-top:6px;border-top:1px solid #eee;padding-top:6px;">';
+            html += '<div class="dist-row"><span class="dist-label" style="font-weight:600;">Segments (' + data.segNames.length + '):</span></div>';
+            html += '<div style="max-height:120px;overflow-y:auto;">';
+            data.segNames.forEach((name, i) => {
+                const d = data.segDistances ? data.segDistances[i] : 0;
+                html += '<div class="dist-row" style="font-size:10px;padding-left:8px;">';
+                html += '<span class="dist-label" style="color:var(--text-muted);">' + (i+1) + '. ' + name + '</span>';
+                html += '<span class="dist-value" style="font-size:10px;">' + formatDistance(d) + '</span>';
+                html += '</div>';
+            });
+            html += '</div></div>';
+        }
         html += '</div>';
     }
     dc.innerHTML = html;
@@ -4847,7 +4860,9 @@ function handleMeasureClick(latlng, knownIdx, knownLayerId) {
             title: 'A-End to B-End' + (result.segments > 1 ? ' (' + result.segments + ' segments)' : ''),
             geo: result.distance, est, slack: fiberSlackPct,
             aEnd: a.vertexIdx, bEnd: b.vertexIdx,
-            crossSegment: result.segments > 1
+            crossSegment: result.segments > 1,
+            segNames: result.segNames || [],
+            segDistances: result.segDistances || []
         });
 
         // Reset measure mode
@@ -4888,11 +4903,8 @@ function calcCrossSegmentDistance(a, b) {
         return { distance: dist, pathCoords: [a.coord, b.coord], segments: 0 };
     }
 
-    // Step 2: Build adjacency graph based on endpoint proximity
-    // For each segment, store its two endpoints. Two segments are adjacent if
-    // one endpoint of one is close (<0.5 km) to an endpoint of the other.
-    const CONNECT_THRESHOLD = 0.5; // km — max gap to consider segments connected
-
+    // Step 2: Build FULL adjacency graph — connect every segment endpoint
+    // to every other segment endpoint, weighted by gap distance.
     function segEndpoints(layer) {
         return {
             start: layer.coords[0],
@@ -4900,62 +4912,85 @@ function calcCrossSegmentDistance(a, b) {
         };
     }
 
-    // Build adjacency: for each layer, which other layers connect to it and at which ends
-    const adj = new Map(); // layerId -> [{neighborId, myEnd:'start'|'end', theirEnd:'start'|'end'}]
+    // Pre-compute all endpoints
+    const epMap = new Map();
+    allLines.forEach(l => epMap.set(l.id, segEndpoints(l)));
+
+    // Build adjacency: for each pair of segments, record all 4 endpoint-to-endpoint gaps
+    const adj = new Map(); // layerId -> [{neighborId, myEnd, theirEnd, gap}]
     allLines.forEach(l => adj.set(l.id, []));
 
     for (let i = 0; i < allLines.length; i++) {
-        const epI = segEndpoints(allLines[i]);
+        const idI = allLines[i].id;
+        const epI = epMap.get(idI);
         for (let j = i + 1; j < allLines.length; j++) {
-            const epJ = segEndpoints(allLines[j]);
-            // Check all 4 endpoint combinations
+            const idJ = allLines[j].id;
+            const epJ = epMap.get(idJ);
+            // All 4 endpoint combinations
             const pairs = [
-                { myEnd: 'end', theirEnd: 'start', d: haversineDistance(epI.end[0], epI.end[1], epJ.start[0], epJ.start[1]) },
-                { myEnd: 'end', theirEnd: 'end', d: haversineDistance(epI.end[0], epI.end[1], epJ.end[0], epJ.end[1]) },
                 { myEnd: 'start', theirEnd: 'start', d: haversineDistance(epI.start[0], epI.start[1], epJ.start[0], epJ.start[1]) },
                 { myEnd: 'start', theirEnd: 'end', d: haversineDistance(epI.start[0], epI.start[1], epJ.end[0], epJ.end[1]) },
+                { myEnd: 'end', theirEnd: 'start', d: haversineDistance(epI.end[0], epI.end[1], epJ.start[0], epJ.start[1]) },
+                { myEnd: 'end', theirEnd: 'end', d: haversineDistance(epI.end[0], epI.end[1], epJ.end[0], epJ.end[1]) },
             ];
-            // Find closest connection
+            // Keep the best (smallest gap) connection between this pair
             const best = pairs.reduce((a, b) => a.d < b.d ? a : b);
-            if (best.d < CONNECT_THRESHOLD) {
-                adj.get(allLines[i].id).push({ neighborId: allLines[j].id, myEnd: best.myEnd, theirEnd: best.theirEnd });
-                // Reverse for the other direction
-                const revMyEnd = best.theirEnd, revTheirEnd = best.myEnd;
-                adj.get(allLines[j].id).push({ neighborId: allLines[i].id, myEnd: revMyEnd, theirEnd: revTheirEnd });
-            }
+            adj.get(idI).push({ neighborId: idJ, myEnd: best.myEnd, theirEnd: best.theirEnd, gap: best.d });
+            adj.get(idJ).push({ neighborId: idI, myEnd: best.theirEnd, theirEnd: best.myEnd, gap: best.d });
         }
     }
 
-    // Step 3: BFS/DFS from layer A to layer B to find the path of segments
-    const visited = new Set();
-    const queue = [{ layerId: a.layerId, path: [a.layerId], connections: [] }];
-    visited.add(a.layerId);
-    let foundPath = null;
+    // Step 3: Dijkstra from layer A to layer B — minimize total gap distance
+    // This finds the path through segments with the smallest total gap between them,
+    // avoiding stray segments that connect nowhere useful.
+    const dist = new Map(); // layerId -> best total gap distance
+    const prev = new Map(); // layerId -> {from, myEnd, theirEnd}
+    allLines.forEach(l => dist.set(l.id, Infinity));
+    dist.set(a.layerId, 0);
 
-    while (queue.length > 0) {
-        const cur = queue.shift();
-        if (cur.layerId === b.layerId) {
-            foundPath = cur;
-            break;
-        }
+    // Simple priority queue using sorted array (fine for <1000 segments)
+    const pq = [{ layerId: a.layerId, cost: 0 }];
+    const settled = new Set();
+
+    while (pq.length > 0) {
+        // Extract min cost
+        pq.sort((x, y) => x.cost - y.cost);
+        const cur = pq.shift();
+        if (settled.has(cur.layerId)) continue;
+        settled.add(cur.layerId);
+
+        if (cur.layerId === b.layerId) break; // Found shortest path
+
         const neighbors = adj.get(cur.layerId) || [];
         for (const n of neighbors) {
-            if (!visited.has(n.neighborId)) {
-                visited.add(n.neighborId);
-                queue.push({
-                    layerId: n.neighborId,
-                    path: [...cur.path, n.neighborId],
-                    connections: [...cur.connections, { from: cur.layerId, myEnd: n.myEnd, theirEnd: n.theirEnd, to: n.neighborId }]
-                });
+            if (settled.has(n.neighborId)) continue;
+            const newCost = cur.cost + n.gap;
+            if (newCost < dist.get(n.neighborId)) {
+                dist.set(n.neighborId, newCost);
+                prev.set(n.neighborId, { from: cur.layerId, myEnd: n.myEnd, theirEnd: n.theirEnd });
+                pq.push({ layerId: n.neighborId, cost: newCost });
             }
         }
     }
 
-    if (!foundPath) {
-        // No connected path found — straight-line fallback
-        const dist = haversineDistance(a.coord[0], a.coord[1], b.coord[0], b.coord[1]);
-        return { distance: dist, pathCoords: [a.coord, b.coord], segments: 0 };
+    // Reconstruct path from A to B
+    if (!prev.has(b.layerId) && a.layerId !== b.layerId) {
+        const d = haversineDistance(a.coord[0], a.coord[1], b.coord[0], b.coord[1]);
+        return { distance: d, pathCoords: [a.coord, b.coord], segments: 0, usedLayerIds: [], segNames: [], segDistances: [] };
     }
+
+    const segPath = [];
+    const conns = [];
+    let cur = b.layerId;
+    while (cur !== a.layerId) {
+        segPath.unshift(cur);
+        const p = prev.get(cur);
+        conns.unshift({ from: p.from, myEnd: p.myEnd, theirEnd: p.theirEnd, to: cur });
+        cur = p.from;
+    }
+    segPath.unshift(a.layerId);
+
+    const foundPath = { path: segPath, connections: conns };
 
     // Step 4: Build oriented coordinate chain along the found path
     const segPath = foundPath.path; // ordered layer IDs from A to B
@@ -5020,10 +5055,12 @@ function calcCrossSegmentDistance(a, b) {
         [pA, pB] = [pB, pA];
     }
 
-    // Step 6: Extract path coordinates from A to B, collect used layer IDs
+    // Step 6: Extract path coordinates from A to B, collect used layer IDs and names
     let pathCoords = [];
     let segCount = 0;
     const usedLayerIds = [];
+    const segNames = [];
+    const segDistances = [];
 
     for (let si = pA.segIdx; si <= pB.segIdx; si++) {
         const seg = oriented[si];
@@ -5031,18 +5068,23 @@ function calcCrossSegmentDistance(a, b) {
         if (si === pA.segIdx) fromV = pA.localIdx;
         if (si === pB.segIdx) toV = pB.localIdx;
         const slice = seg.coords.slice(fromV, toV + 1);
+        let segDist = 0;
+        for (let i = 0; i < slice.length - 1; i++) {
+            segDist += haversineDistance(slice[i][0], slice[i][1], slice[i+1][0], slice[i+1][1]);
+        }
         pathCoords = pathCoords.concat(slice);
         usedLayerIds.push(seg.layerId);
+        const layer = projectData.layers[seg.layerId];
+        segNames.push(layer ? layer.name : '?');
+        segDistances.push(segDist);
         segCount++;
     }
 
-    // Calculate distance
+    // Calculate total distance
     let totalDist = 0;
-    for (let i = 0; i < pathCoords.length - 1; i++) {
-        totalDist += haversineDistance(pathCoords[i][0], pathCoords[i][1], pathCoords[i+1][0], pathCoords[i+1][1]);
-    }
+    for (const d of segDistances) totalDist += d;
 
-    return { distance: totalDist, pathCoords, segments: segCount, usedLayerIds };
+    return { distance: totalDist, pathCoords, segments: segCount, usedLayerIds, segNames, segDistances };
 }
 
 // Get all line layers in folder order (depth-first, items order) — kept for other uses
