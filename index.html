@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<!-- NexiMap KML Studio v2.9.8 - Dual measurement mode: Strict Cable Path vs Best Estimate -->
+<!-- NexiMap KML Studio v2.9.9 - Optimized topology for large KMZ files (10K+ nodes) -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NexiMap KML Studio v2.9.8</title>
+<title>NexiMap KML Studio v2.9.9</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='2' width='28' height='28' rx='4' fill='%230096D6'/%3E%3Cpath d='M8 12L16 8L24 12L16 16Z' fill='white' opacity='0.9'/%3E%3Cpath d='M8 16L16 20L24 16' stroke='white' stroke-width='1.5' fill='none'/%3E%3Cpath d='M8 20L16 24L24 20' stroke='white' stroke-width='1.5' fill='none'/%3E%3C/svg%3E"/>
 <style>
 :root {
@@ -1028,7 +1028,7 @@ header {
     <div class="app-logo">
         <svg width="20" height="20" viewBox="0 0 32 32"><rect x="2" y="2" width="28" height="28" rx="4" fill="#0096D6"/><path d="M8 12L16 8L24 12L16 16Z" fill="white" opacity="0.9"/><path d="M8 16L16 20L24 16" stroke="white" stroke-width="1.5" fill="none"/><path d="M8 20L16 24L24 20" stroke="white" stroke-width="1.5" fill="none"/></svg>
         NexiMap KML Studio
-        <span class="ver">v2.9.8</span>
+        <span class="ver">v2.9.9</span>
     </div>
 
     <!-- File Menu -->
@@ -1199,7 +1199,7 @@ header {
     <div id="topoModal">
         <div id="topoModalInner">
             <div class="topo-header">
-                <h3>🔗 Topology Diagram — Segment Connectivity</h3>
+                <h3>🔗 Topology Diagram — Simplified Graph</h3>
                 <div class="topo-header-btns">
                     <button onclick="topoZoomIn()">Zoom +</button>
                     <button onclick="topoZoomOut()">Zoom −</button>
@@ -1210,10 +1210,9 @@ header {
             <div class="topo-body">
                 <canvas id="topoCanvas"></canvas>
                 <div class="topo-legend">
-                    <div class="topo-legend-item"><div class="topo-legend-line" style="background:#0096D6;"></div><span>Cable segment (internal)</span></div>
-                    <div class="topo-legend-item"><div class="topo-legend-line" style="background:#ccc;border:1px dashed #999;height:1px;"></div><span>Gap connection</span></div>
-                    <div class="topo-legend-item"><div class="topo-legend-line" style="background:#e67e22;border:1px dashed #c0392b;height:1px;"></div><span>Bridge (component link)</span></div>
-                    <div class="topo-legend-item"><svg width="12" height="12"><circle cx="6" cy="6" r="5" fill="#0096D6" stroke="white" stroke-width="1.5"/></svg><span>Endpoint node</span></div>
+                    <div class="topo-legend-item"><div class="topo-legend-line" style="background:#0096D6;"></div><span>Cable path (merged)</span></div>
+                    <div class="topo-legend-item"><svg width="12" height="12"><circle cx="6" cy="6" r="5" fill="#10b981" stroke="white" stroke-width="1.5"/></svg><span>Terminal</span></div>
+                    <div class="topo-legend-item"><svg width="12" height="12"><circle cx="6" cy="6" r="5" fill="#ef4444" stroke="white" stroke-width="1.5"/></svg><span>Hub / Branch</span></div>
                 </div>
                 <div class="topo-info" id="topoInfo">Hover over a node or edge for details</div>
             </div>
@@ -1368,6 +1367,8 @@ header {
                 <div style="height:5px;"></div>
                 <button class="prop-btn" onclick="calcMultiDistance()">📐 Calculate Distance</button>
                 <div style="height:5px;"></div>
+                <button class="prop-btn" onclick="joinSelectedSegments()" style="background:#e67e22;color:white;">&#x1F517; Join into Single Line</button>
+                <div style="height:5px;"></div>
                 <button class="prop-btn danger" onclick="deleteMultiSelected()">Delete Selected</button>
             </div>
         </div>
@@ -1386,6 +1387,7 @@ header {
     <div class="ctx-item" data-for="layer" onclick="ctxMoveToFolder()">📁 Move to folder…</div>
     <div class="ctx-sep" data-for="both"></div>
     <div class="ctx-item" data-for="both" onclick="ctxCalcDistance()">📐 Calculate Distance</div>
+    <div class="ctx-item" data-for="both" onclick="ctxJoinSegments()">&#x1F517; Join into Single Line</div>
     <div class="ctx-item" data-for="layer" onclick="ctxMeasureAB()">🟢🔴 Measure A-End → B-End</div>
     <div class="ctx-sep" data-for="both"></div>
     <div class="ctx-submenu" data-for="both" id="ctxExportSubmenu">
@@ -5043,6 +5045,192 @@ window.toggleDistMinimize = function() {
 })();
 
 // ═══════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════
+// JOIN / MERGE SEGMENTS INTO SINGLE LINE
+// ═══════════════════════════════════════════════════════════
+
+// Context menu entry point
+window.ctxJoinSegments = function() {
+    // If right-clicked on a folder, select all its line layers first
+    if (ctxTargetFolderId) {
+        const folder = projectData.folders.find(f => f.id === ctxTargetFolderId);
+        if (folder) {
+            selectedLayerIds.clear();
+            function collectLines(fId) {
+                const f = projectData.folders.find(ff => ff.id === fId);
+                if (!f) return;
+                f.items.forEach(id => {
+                    const l = projectData.layers[id];
+                    if (l && l.type === 'line' && l.visible) selectedLayerIds.add(id);
+                });
+                projectData.folders.filter(ff => ff.parentId === fId).forEach(sf => collectLines(sf.id));
+            }
+            collectLines(ctxTargetFolderId);
+        }
+    } else if (ctxTargetId) {
+        // Single layer right-click — not enough to join
+        if (selectedLayerIds.size < 2) {
+            toast('Select 2 or more line segments to join', 'info');
+            return;
+        }
+    }
+    joinSelectedSegments();
+    ctxTargetFolderId = null;
+};
+
+// Main join function — works with selectedLayerIds
+window.joinSelectedSegments = function() {
+    // Collect all selected line layers
+    const lines = [];
+    for (const id of selectedLayerIds) {
+        const l = projectData.layers[id];
+        if (l && l.type === 'line' && l.coords && l.coords.length >= 2) {
+            lines.push({ id, name: l.name, coords: l.coords.slice() });
+        }
+    }
+    if (lines.length < 2) {
+        toast('Select at least 2 line segments to join', 'info');
+        return;
+    }
+
+    toast('Joining ' + lines.length + ' segments...', 'info');
+
+    // ─── Build chain by nearest-endpoint greedy algorithm (optimized with spatial grid) ───
+    const DEG2R = Math.PI / 180;
+    const midLat = lines.reduce((s, l) => s + l.coords[0][0], 0) / lines.length * DEG2R;
+    const cosLat = Math.cos(midLat);
+    function qDist(a, b) {
+        const dl = a[0] - b[0], dn = (a[1] - b[1]) * cosLat;
+        return dl*dl + dn*dn;
+    }
+
+    // Build spatial grid of segment endpoints for O(1) neighbor lookup
+    const allEndpoints = []; // {segIdx, end:'s'|'e', coord}
+    for (let i = 0; i < lines.length; i++) {
+        allEndpoints.push({ segIdx: i, end: 's', coord: lines[i].coords[0] });
+        allEndpoints.push({ segIdx: i, end: 'e', coord: lines[i].coords[lines[i].coords.length - 1] });
+    }
+    const JG_RES = 0.02; // ~2km grid cells
+    const joinGrid = new Map();
+    for (const ep of allEndpoints) {
+        const key = Math.floor(ep.coord[1] / JG_RES) + ',' + Math.floor(ep.coord[0] / JG_RES);
+        if (!joinGrid.has(key)) joinGrid.set(key, []);
+        joinGrid.get(key).push(ep);
+    }
+    function findNearestEndpoint(coord, excludeSet) {
+        const gx0 = Math.floor(coord[1] / JG_RES), gy0 = Math.floor(coord[0] / JG_RES);
+        let bestEp = null, bestDist = Infinity;
+        for (let r = 0; r <= 50; r++) {
+            for (let dx = -r; dx <= r; dx++) {
+                for (let dy = -r; dy <= r; dy++) {
+                    if (r > 0 && Math.abs(dx) < r && Math.abs(dy) < r) continue;
+                    const cell = joinGrid.get((gx0 + dx) + ',' + (gy0 + dy));
+                    if (!cell) continue;
+                    for (const ep of cell) {
+                        if (excludeSet.has(ep.segIdx)) continue;
+                        const d = qDist(coord, ep.coord);
+                        if (d < bestDist) { bestDist = d; bestEp = ep; }
+                    }
+                }
+            }
+            if (bestEp) break; // found in this shell
+        }
+        // Fallback brute force if grid missed (very sparse)
+        if (!bestEp) {
+            for (const ep of allEndpoints) {
+                if (excludeSet.has(ep.segIdx)) continue;
+                const d = qDist(coord, ep.coord);
+                if (d < bestDist) { bestDist = d; bestEp = ep; }
+            }
+        }
+        return bestEp;
+    }
+
+    // Find chain start: endpoint with the greatest minimum distance to any other segment
+    let bestStartIdx = 0, bestStartEnd = 's', bestMaxMinDist = 0;
+    for (const ep of allEndpoints) {
+        const nearest = findNearestEndpoint(ep.coord, new Set([ep.segIdx]));
+        if (nearest) {
+            const d = qDist(ep.coord, nearest.coord);
+            if (d > bestMaxMinDist) {
+                bestMaxMinDist = d;
+                bestStartIdx = ep.segIdx;
+                bestStartEnd = ep.end;
+            }
+        }
+    }
+
+    // Build ordered chain using spatial lookup
+    const used = new Set();
+    const chain = [];
+    let currentCoords = bestStartEnd === 'e' ? lines[bestStartIdx].coords.slice().reverse() : lines[bestStartIdx].coords.slice();
+    chain.push({ coords: currentCoords, name: lines[bestStartIdx].name });
+    used.add(bestStartIdx);
+
+    while (used.size < lines.length) {
+        const tip = currentCoords[currentCoords.length - 1];
+        const nearest = findNearestEndpoint(tip, used);
+        if (!nearest) break;
+        used.add(nearest.segIdx);
+        const seg = lines[nearest.segIdx];
+        currentCoords = nearest.end === 'e' ? seg.coords.slice().reverse() : seg.coords.slice();
+        chain.push({ coords: currentCoords, name: seg.name });
+    }
+
+    // Concatenate all coords into one polyline
+    let mergedCoords = [];
+    for (const seg of chain) {
+        // Skip first point if it's very close to previous last point (avoid duplicates)
+        if (mergedCoords.length > 0) {
+            const last = mergedCoords[mergedCoords.length - 1];
+            const first = seg.coords[0];
+            if (qDist(last, first) < 0.0000001) { // ~10m threshold
+                mergedCoords = mergedCoords.concat(seg.coords.slice(1));
+            } else {
+                mergedCoords = mergedCoords.concat(seg.coords);
+            }
+        } else {
+            mergedCoords = seg.coords.slice();
+        }
+    }
+
+    // Create the merged layer
+    const mergedName = 'Joined (' + lines.length + ' segments)';
+    const firstLayer = projectData.layers[lines[0].id];
+    const color = firstLayer ? firstLayer.color : '#0055ff';
+    const width = firstLayer ? firstLayer.width : 3;
+    const newId = 'layer_' + Date.now() + '_joined';
+
+    // Find the folder of the first selected layer
+    let targetFolderId = projectData.folders[0].id;
+    for (const f of projectData.folders) {
+        if (f.items.includes(lines[0].id)) { targetFolderId = f.id; break; }
+    }
+
+    // Add the new layer
+    projectData.layers[newId] = {
+        id: newId, name: mergedName, type: 'line',
+        coords: mergedCoords, color, width, opacity: 1, visible: true
+    };
+    const folder = projectData.folders.find(f => f.id === targetFolderId);
+    if (folder) folder.items.push(newId);
+
+    // Render the new line on map
+    const polyline = L.polyline(mergedCoords, { color, weight: width, opacity: 1 }).addTo(map);
+    polyline._layerId = newId;
+    polyline.on('click', function(e) { L.DomEvent.stopPropagation(e); selectLayer(newId); });
+    mapLayers[newId] = polyline;
+
+    // Clear selection
+    selectedLayerIds.clear();
+    selectLayer(newId);
+    renderLayerTree();
+    renderVertexDots();
+
+    toast('Joined ' + lines.length + ' segments into "' + mergedName + '" (' + mergedCoords.length + ' vertices)', 'success');
+};
+
 // TOPOLOGY DIAGRAM
 // ═══════════════════════════════════════════════════════════
 let topoState = { nodes: [], edges: [], zoom: 1, panX: 0, panY: 0, dragging: null, hovered: null };
@@ -5051,167 +5239,264 @@ window.showTopologyDiagram = function() {
     const allLines = Object.values(projectData.layers).filter(l => l.visible && l.type === 'line' && l.coords.length >= 2);
     if (allLines.length < 1) { toast('No visible line layers to diagram', 'error'); return; }
 
-    // Build topology nodes and edges
-    const tNodes = []; // {id, label, x, y, geoLat, geoLng, color, layerId}
-    const tEdges = []; // {from, to, type:'internal'|'gap', dist, color, label}
-    const nodeMap = new Map(); // layerId:s/e -> index
+    const t0 = performance.now();
 
-    // Create nodes from layer endpoints
-    allLines.forEach(layer => {
-        const sCoord = layer.coords[0];
-        const eCoord = layer.coords[layer.coords.length - 1];
-        const sId = layer.id + ':s';
-        const eId = layer.id + ':e';
-        const color = layer.color || '#0055ff';
+    // ═══════════════════════════════════════════════════════════
+    // SIMPLIFIED TOPOLOGY — 4-pass reduction
+    //   1. Cluster endpoints into junctions, walk chains (degree-2 merge)
+    //   2. Spatially cluster junctions into hubs
+    //   3. Merge parallel edges, prune short stubs
+    //   4. Degree-2 elimination on hub graph (second pass)
+    // ═══════════════════════════════════════════════════════════
 
-        nodeMap.set(sId, tNodes.length);
-        tNodes.push({ id: sId, label: layer.name + ' [S]', x: 0, y: 0, geoLng: sCoord[1], geoLat: sCoord[0], color, layerId: layer.id });
-
-        nodeMap.set(eId, tNodes.length);
-        tNodes.push({ id: eId, label: layer.name + ' [E]', x: 0, y: 0, geoLng: eCoord[1], geoLat: eCoord[0], color, layerId: layer.id });
-
-        // Internal edge
-        let iDist = 0;
-        for (let i = 0; i < layer.coords.length - 1; i++) {
-            iDist += haversineDistance(layer.coords[i][0], layer.coords[i][1], layer.coords[i+1][0], layer.coords[i+1][1]);
-        }
-        tEdges.push({ from: nodeMap.get(sId), to: nodeMap.get(eId), type: 'internal', dist: iDist, color, label: layer.name });
-    });
-
-    // ─── Union-Find for O(1) amortized connectivity checks ───
-    const ufParent = new Int32Array(tNodes.length);
-    const ufRank = new Uint8Array(tNodes.length);
-    for (let i = 0; i < tNodes.length; i++) ufParent[i] = i;
-    function ufFind(x) { while (ufParent[x] !== x) { ufParent[x] = ufParent[ufParent[x]]; x = ufParent[x]; } return x; }
-    function ufUnion(a, b) {
-        a = ufFind(a); b = ufFind(b);
-        if (a === b) return false;
-        if (ufRank[a] < ufRank[b]) [a, b] = [b, a];
-        ufParent[b] = a;
-        if (ufRank[a] === ufRank[b]) ufRank[a]++;
-        return true;
+    const cosLat = Math.cos((allLines.reduce((s,l) => s + l.coords[0][0], 0) / allLines.length) * Math.PI / 180);
+    function fastKm(a, b) {
+        const dlat = a[0] - b[0], dlng = (a[1] - b[1]) * cosLat;
+        return Math.sqrt(dlat * dlat + dlng * dlng) * 111.32;
+    }
+    function segLen(layer) {
+        let d = 0;
+        for (let i = 0; i < layer.coords.length - 1; i++) d += fastKm(layer.coords[i], layer.coords[i+1]);
+        return d;
     }
 
-    // Internal edges already connect S<->E of same layer
-    tEdges.forEach(e => ufUnion(e.from, e.to));
-
-    // ─── Spatial grid for fast nearest-neighbor lookup ───
-    const GRID_RES = 0.5; // ~50km grid cells
-    const spatialGrid = new Map();
-    for (let i = 0; i < tNodes.length; i++) {
-        const gx = Math.floor(tNodes[i].geoLng / GRID_RES);
-        const gy = Math.floor(tNodes[i].geoLat / GRID_RES);
-        const key = gx + ',' + gy;
-        if (!spatialGrid.has(key)) spatialGrid.set(key, []);
-        spatialGrid.get(key).push(i);
-    }
-    function getNearbyNodes(idx, radius) {
-        const n = tNodes[idx];
-        const rCells = Math.ceil(radius / GRID_RES) + 1;
-        const gx0 = Math.floor(n.geoLng / GRID_RES);
-        const gy0 = Math.floor(n.geoLat / GRID_RES);
-        const nearby = [];
-        for (let dx = -rCells; dx <= rCells; dx++) {
-            for (let dy = -rCells; dy <= rCells; dy++) {
-                const cell = spatialGrid.get((gx0 + dx) + ',' + (gy0 + dy));
-                if (cell) for (const j of cell) if (j !== idx) nearby.push(j);
-            }
-        }
-        return nearby;
-    }
-
-    // ─── Gap edges: connect each endpoint to K nearest from DIFFERENT layers ───
-    const K_NEAREST = 3;
-    const edgeSet = new Set();
-    tEdges.forEach(e => { edgeSet.add(e.from + ':' + e.to); edgeSet.add(e.to + ':' + e.from); });
-
-    for (let i = 0; i < tNodes.length; i++) {
-        // Search nearby grid cells first (expanding radius if needed)
-        let candidates = [];
-        for (let r = 1; r <= 20 && candidates.length < K_NEAREST; r++) {
-            const nearby = getNearbyNodes(i, r);
-            candidates = [];
-            for (const j of nearby) {
-                if (tNodes[j].layerId === tNodes[i].layerId) continue;
-                const d = haversineDistance(tNodes[i].geoLat, tNodes[i].geoLng, tNodes[j].geoLat, tNodes[j].geoLng);
-                candidates.push({ j, d });
-            }
-            candidates.sort((a, b) => a.d - b.d);
-        }
-        // Fallback: brute-force if grid search found nothing (very sparse data)
-        if (candidates.length < K_NEAREST) {
-            candidates = [];
-            for (let j = 0; j < tNodes.length; j++) {
-                if (tNodes[j].layerId === tNodes[i].layerId) continue;
-                const d = haversineDistance(tNodes[i].geoLat, tNodes[i].geoLng, tNodes[j].geoLat, tNodes[j].geoLng);
-                candidates.push({ j, d });
-            }
-            candidates.sort((a, b) => a.d - b.d);
-        }
-        for (const { j: bestJ, d: bestDist } of candidates.slice(0, K_NEAREST)) {
-            const eKey = Math.min(i, bestJ) + ':' + Math.max(i, bestJ);
-            if (!edgeSet.has(i + ':' + bestJ)) {
-                tEdges.push({ from: i, to: bestJ, type: 'gap', dist: bestDist, color: '#aaa', label: 'gap ' + bestDist.toFixed(1) + 'km' });
-                edgeSet.add(i + ':' + bestJ); edgeSet.add(bestJ + ':' + i);
-                ufUnion(i, bestJ);
-            }
+    // ─── PASS 1: Cluster endpoints, walk chains ───
+    const SNAP = 0.0005;
+    const epGrid = new Map();
+    const allEps = [];
+    for (let li = 0; li < allLines.length; li++) {
+        const l = allLines[li];
+        for (const [end, coord] of [['s', l.coords[0]], ['e', l.coords[l.coords.length - 1]]]) {
+            const ep = { li, end, coord, jid: -1 };
+            allEps.push(ep);
+            const gk = Math.floor(coord[0] / SNAP) + ',' + Math.floor(coord[1] / SNAP);
+            if (!epGrid.has(gk)) epGrid.set(gk, []);
+            epGrid.get(gk).push(ep);
         }
     }
 
-    // ─── Bridge disconnected components using Union-Find (no BFS needed) ───
-    // Collect all inter-component candidate edges sorted by distance
-    let componentCount = new Set(Array.from({length: tNodes.length}, (_, i) => ufFind(i))).size;
-    if (componentCount > 1) {
-        // Build list of component representatives
-        const compMap = new Map(); // root -> [node indices]
-        for (let i = 0; i < tNodes.length; i++) {
-            const r = ufFind(i);
-            if (!compMap.has(r)) compMap.set(r, []);
-            compMap.get(r).push(i);
-        }
-        const compRoots = Array.from(compMap.keys());
-
-        // For each pair of components, find the closest node pair using spatial proximity
-        const bridgeCandidates = [];
-        for (let ci = 0; ci < compRoots.length; ci++) {
-            for (let cj = ci + 1; cj < compRoots.length; cj++) {
-                let bestDist = Infinity, bestI = -1, bestJ = -1;
-                const nodesA = compMap.get(compRoots[ci]);
-                const nodesB = compMap.get(compRoots[cj]);
-                // Use smaller component for outer loop
-                const [smaller, larger] = nodesA.length <= nodesB.length ? [nodesA, nodesB] : [nodesB, nodesA];
-                for (const a of smaller) {
-                    for (const b of larger) {
-                        const d = haversineDistance(tNodes[a].geoLat, tNodes[a].geoLng, tNodes[b].geoLat, tNodes[b].geoLng);
-                        if (d < bestDist) { bestDist = d; bestI = a; bestJ = b; }
+    let nextJ = 0;
+    for (const ep of allEps) {
+        if (ep.jid >= 0) continue;
+        const queue = [ep]; ep.jid = nextJ;
+        while (queue.length) {
+            const cur = queue.shift();
+            const gx = Math.floor(cur.coord[0] / SNAP), gy = Math.floor(cur.coord[1] / SNAP);
+            for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
+                const cell = epGrid.get((gx+dx)+','+(gy+dy));
+                if (!cell) continue;
+                for (const o of cell) {
+                    if (o.jid >= 0) continue;
+                    if (Math.abs(cur.coord[0]-o.coord[0]) < SNAP && Math.abs(cur.coord[1]-o.coord[1]) < SNAP) {
+                        o.jid = nextJ; queue.push(o);
                     }
                 }
-                if (bestI >= 0) bridgeCandidates.push({ i: bestI, j: bestJ, d: bestDist });
             }
         }
-        // Sort by distance and greedily bridge using Kruskal-style MST
-        bridgeCandidates.sort((a, b) => a.d - b.d);
-        for (const bc of bridgeCandidates) {
-            if (ufFind(bc.i) !== ufFind(bc.j)) {
-                tEdges.push({ from: bc.i, to: bc.j, type: 'gap', dist: bc.d, color: '#e67e22', label: 'bridge ' + bc.d.toFixed(1) + 'km' });
-                edgeSet.add(bc.i + ':' + bc.j); edgeSet.add(bc.j + ':' + bc.i);
-                ufUnion(bc.i, bc.j);
+        nextJ++;
+    }
+
+    const juncs = new Map();
+    for (const ep of allEps) {
+        if (!juncs.has(ep.jid)) juncs.set(ep.jid, { coord: ep.coord, segs: new Set() });
+        juncs.get(ep.jid).segs.add(ep.li);
+    }
+    for (const [,j] of juncs) j.degree = j.segs.size;
+
+    const segJ = [];
+    for (let li = 0; li < allLines.length; li++) {
+        segJ.push({ s: allEps[li*2].jid, e: allEps[li*2+1].jid });
+    }
+
+    const usedSeg = new Set();
+    const simEdges = [];
+    for (let li = 0; li < allLines.length; li++) {
+        if (usedSeg.has(li)) continue;
+        const sj = segJ[li].s, ej = segJ[li].e;
+        if (sj === ej) { usedSeg.add(li); continue; }
+        usedSeg.add(li);
+        let dist = segLen(allLines[li]), segs = 1;
+        let chainStart = sj, chainEnd = ej;
+
+        let cur = ej;
+        while (juncs.has(cur) && juncs.get(cur).degree === 2) {
+            let nxt = -1;
+            for (const s of juncs.get(cur).segs) { if (!usedSeg.has(s)) { nxt = s; break; } }
+            if (nxt < 0) break;
+            usedSeg.add(nxt); dist += segLen(allLines[nxt]); segs++;
+            cur = segJ[nxt].s === cur ? segJ[nxt].e : segJ[nxt].s;
+        }
+        chainEnd = cur;
+
+        cur = sj;
+        while (juncs.has(cur) && juncs.get(cur).degree === 2) {
+            let nxt = -1;
+            for (const s of juncs.get(cur).segs) { if (!usedSeg.has(s)) { nxt = s; break; } }
+            if (nxt < 0) break;
+            usedSeg.add(nxt); dist += segLen(allLines[nxt]); segs++;
+            cur = segJ[nxt].s === cur ? segJ[nxt].e : segJ[nxt].s;
+        }
+        chainStart = cur;
+
+        simEdges.push({ from: chainStart, to: chainEnd, dist, segCount: segs, color: allLines[li].color || '#0096D6' });
+    }
+
+    // ─── PASS 2: Spatially cluster junctions into hubs ───
+    const activeJids = new Set();
+    for (const e of simEdges) { activeJids.add(e.from); activeJids.add(e.to); }
+    const activeList = Array.from(activeJids).map(jid => ({ jid, coord: juncs.get(jid).coord, degree: juncs.get(jid).degree }));
+
+    const aLats = activeList.map(a => a.coord[0]), aLngs = activeList.map(a => a.coord[1]);
+    const geoSpan = Math.max((Math.max(...aLats)-Math.min(...aLats))*111, (Math.max(...aLngs)-Math.min(...aLngs))*111*cosLat) || 1;
+    const CLUSTER_R = Math.max(2, Math.min(20, geoSpan / 15));
+
+    activeList.sort((a,b) => b.degree - a.degree);
+    const hubOf = new Map();
+    const hubs = [];
+    for (const item of activeList) {
+        if (hubOf.has(item.jid)) continue;
+        const hub = { id: hubs.length, coord: item.coord, jids: [item.jid], totalDegree: item.degree };
+        hubOf.set(item.jid, hub.id);
+        for (const other of activeList) {
+            if (hubOf.has(other.jid)) continue;
+            if (fastKm(item.coord, other.coord) < CLUSTER_R) {
+                hub.jids.push(other.jid);
+                hub.totalDegree += other.degree;
+                hubOf.set(other.jid, hub.id);
             }
+        }
+        hubs.push(hub);
+    }
+
+    // ─── PASS 3: Remap to hubs, merge parallel edges ───
+    let hubEdges = [];
+    for (const e of simEdges) {
+        const hf = hubOf.get(e.from), ht = hubOf.get(e.to);
+        if (hf === undefined || ht === undefined || hf === ht) continue;
+        hubEdges.push({ from: hf, to: ht, dist: e.dist, segCount: e.segCount, color: e.color });
+    }
+
+    const edgeKey = (a,b) => Math.min(a,b) + ':' + Math.max(a,b);
+    let merged = new Map();
+    for (const e of hubEdges) {
+        const k = edgeKey(e.from, e.to);
+        if (merged.has(k)) {
+            const m = merged.get(k); m.dist += e.dist; m.segCount += e.segCount; m.count++;
+        } else {
+            merged.set(k, { from: e.from, to: e.to, dist: e.dist, segCount: e.segCount, color: e.color, count: 1 });
         }
     }
 
-    // Position nodes using geographic coordinates projected to screen
-    const lngs = tNodes.map(n => n.geoLng);
-    const lats = tNodes.map(n => n.geoLat);
-    const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
-    const minLat = Math.min(...lats), maxLat = Math.max(...lats);
-    const lngRange = maxLng - minLng || 1;
-    const latRange = maxLat - minLat || 1;
+    // Prune short stubs
+    let hubDeg = new Map();
+    for (const [,e] of merged) { hubDeg.set(e.from, (hubDeg.get(e.from)||0)+1); hubDeg.set(e.to, (hubDeg.get(e.to)||0)+1); }
+    const STUB_MIN = Math.max(2, geoSpan * 0.01);
+    const toRemove = new Set();
+    for (const [k, e] of merged) {
+        if (((hubDeg.get(e.from)||0) === 1 || (hubDeg.get(e.to)||0) === 1) && e.dist < STUB_MIN) toRemove.add(k);
+    }
+    for (const k of toRemove) merged.delete(k);
 
-    // Show modal FIRST so canvas has dimensions
+    // ─── PASS 4: Second-pass degree-2 elimination on hub graph ───
+    // Rebuild adjacency from merged edges
+    let adj = new Map(); // hubId -> [{otherHub, edgeKey}]
+    for (const [k, e] of merged) {
+        if (!adj.has(e.from)) adj.set(e.from, []);
+        if (!adj.has(e.to)) adj.set(e.to, []);
+        adj.get(e.from).push({ other: e.to, key: k, edge: e });
+        adj.get(e.to).push({ other: e.from, key: k, edge: e });
+    }
+
+    // Iteratively merge through degree-2 hubs
+    let changed = true;
+    while (changed) {
+        changed = false;
+        for (const [hubId, neighbors] of adj) {
+            if (neighbors.length !== 2) continue;
+            // This hub has exactly 2 connections — merge through it
+            const n0 = neighbors[0], n1 = neighbors[1];
+            const newDist = n0.edge.dist + n1.edge.dist;
+            const newSegCount = n0.edge.segCount + n1.edge.segCount;
+            const newCount = Math.max(n0.edge.count, n1.edge.count);
+            const newColor = n0.edge.segCount >= n1.edge.segCount ? n0.edge.color : n1.edge.color;
+
+            // Remove old edges
+            merged.delete(n0.key);
+            merged.delete(n1.key);
+
+            // Add new merged edge
+            const newKey = edgeKey(n0.other, n1.other);
+            if (merged.has(newKey)) {
+                // Parallel path to existing edge — merge
+                const existing = merged.get(newKey);
+                existing.dist += newDist;
+                existing.segCount += newSegCount;
+                existing.count++;
+            } else {
+                merged.set(newKey, { from: Math.min(n0.other, n1.other), to: Math.max(n0.other, n1.other), dist: newDist, segCount: newSegCount, color: newColor, count: newCount });
+            }
+
+            // Remove this hub from adjacency
+            adj.delete(hubId);
+            // Update neighbors' adjacency
+            for (const nb of [n0, n1]) {
+                const nbAdj = adj.get(nb.other);
+                if (nbAdj) {
+                    // Remove reference to deleted hub, add reference to new edge
+                    const filtered = nbAdj.filter(x => x.other !== hubId);
+                    const otherEnd = nb === n0 ? n1.other : n0.other;
+                    const newEdge = merged.get(newKey);
+                    if (newEdge) filtered.push({ other: otherEnd, key: newKey, edge: newEdge });
+                    adj.set(nb.other, filtered);
+                }
+            }
+
+            changed = true;
+            break; // restart iteration since adjacency changed
+        }
+    }
+
+    // ─── Build final output ───
+    const finalHubs = new Set();
+    for (const [,e] of merged) { finalHubs.add(e.from); finalHubs.add(e.to); }
+
+    hubDeg = new Map();
+    for (const [,e] of merged) { hubDeg.set(e.from, (hubDeg.get(e.from)||0)+1); hubDeg.set(e.to, (hubDeg.get(e.to)||0)+1); }
+
+    const tNodes = [];
+    const hubToNode = new Map();
+    for (const hid of finalHubs) {
+        const hub = hubs[hid];
+        const deg = hubDeg.get(hid) || 1;
+        const jCount = hub.jids.length;
+        const nodeColor = deg === 1 ? '#10b981' : deg === 2 ? '#0096D6' : '#ef4444';
+        const label = (deg === 1 ? 'Terminal' : deg === 2 ? 'Waypoint' : 'Branch\u00d7' + deg)
+            + (jCount > 1 ? ' (' + jCount + ' junctions)' : '');
+        hubToNode.set(hid, tNodes.length);
+        tNodes.push({ id: 'h' + hid, label, x: 0, y: 0, geoLat: hub.coord[0], geoLng: hub.coord[1], color: nodeColor, layerId: null });
+    }
+
+    const tEdges = [];
+    for (const [, e] of merged) {
+        const fi = hubToNode.get(e.from), ti = hubToNode.get(e.to);
+        if (fi === undefined || ti === undefined) continue;
+        const lbl = e.dist.toFixed(1) + 'km (' + e.segCount + ' seg)'
+            + (e.count > 1 ? ' [' + e.count + ' paths]' : '');
+        tEdges.push({ from: fi, to: ti, type: 'internal', dist: e.dist, segCount: e.segCount, pathCount: e.count, color: e.color, label: lbl });
+    }
+
+    const elapsed = (performance.now() - t0).toFixed(0);
+    toast('Topology: ' + allLines.length + ' seg \u2192 ' + tNodes.length + ' nodes, ' + tEdges.length + ' edges (' + elapsed + 'ms)', 'success');
+
+    if (tNodes.length === 0) { toast('No topology nodes after simplification', 'info'); return; }
+
+    const nLngs = tNodes.map(n => n.geoLng), nLats = tNodes.map(n => n.geoLat);
+    const minLng = Math.min(...nLngs), maxLng = Math.max(...nLngs);
+    const minLat = Math.min(...nLats), maxLat = Math.max(...nLats);
+    const lngRange = maxLng - minLng || 1, latRange = maxLat - minLat || 1;
+
     document.getElementById('topoModal').classList.add('show');
 
-    // Use requestAnimationFrame to ensure layout is computed
     requestAnimationFrame(() => {
         const canvas = document.getElementById('topoCanvas');
         const rect = canvas.parentElement.getBoundingClientRect();
@@ -5221,20 +5506,18 @@ window.showTopologyDiagram = function() {
         canvas.style.height = rect.height + 'px';
 
         const padding = 80;
-        const w = rect.width - padding * 2;
-        const h = rect.height - padding * 2;
-
+        const w = rect.width - padding * 2, h = rect.height - padding * 2;
         tNodes.forEach(n => {
             n.x = padding + ((n.geoLng - minLng) / lngRange) * w;
             n.y = padding + ((maxLat - n.geoLat) / latRange) * h;
         });
 
         topoState = { nodes: tNodes, edges: tEdges, zoom: 1, panX: 0, panY: 0, dragging: null, hovered: null, canvasW: rect.width, canvasH: rect.height };
-
         renderTopology();
         setupTopoInteraction();
     });
 };
+
 
 function renderTopology() {
     const canvas = document.getElementById('topoCanvas');
@@ -5262,7 +5545,9 @@ function renderTopology() {
             ctx.setLineDash([4, 4]);
         } else {
             ctx.strokeStyle = hovered && hovered.type === 'edge' && hovered.idx === idx ? '#f59e0b' : e.color;
-            ctx.lineWidth = hovered && hovered.type === 'edge' && hovered.idx === idx ? 3.5 : 2;
+            const pcMul = e.pathCount > 1 ? 1.3 : 1;
+            const baseWidth = (e.segCount ? Math.min(6, 1.5 + Math.log2(e.segCount)) : 2) * pcMul;
+            ctx.lineWidth = hovered && hovered.type === 'edge' && hovered.idx === idx ? baseWidth + 1.5 : baseWidth;
             ctx.setLineDash([]);
         }
         ctx.stroke();
@@ -5271,7 +5556,8 @@ function renderTopology() {
         // Distance label on edges when zoomed in
         if ((e.type === 'internal' || e.type === 'gap') && zoom > 0.7) {
             const mx = (from.x + to.x) / 2, my = (from.y + to.y) / 2;
-            const distLabel = e.dist < 1 ? (e.dist * 1000).toFixed(0) + 'm' : e.dist.toFixed(1) + 'km';
+            const distLabel = (e.dist < 1 ? (e.dist * 1000).toFixed(0) + 'm' : e.dist.toFixed(1) + 'km')
+                + (e.segCount > 1 ? ' (' + e.segCount + ' seg)' : '');
             ctx.font = '9px sans-serif';
             ctx.fillStyle = 'rgba(0,0,0,0.5)';
             ctx.textAlign = 'center';
@@ -5561,26 +5847,35 @@ function calcCrossSegmentDistance(a, b) {
         tEdges.get(eId).push({ to: sId, cost: iDist, type: 'internal', layerId: layer.id });
     }
 
-    // ─── STEP 3: Gap edges with Union-Find + spatial grid ───
+    // ─── STEP 3: Gap edges with optimized spatial grid + fast distance ───
     const nodeArr = Array.from(tNodes.entries());
     const nodeIds = nodeArr.map(e => e[0]);
     const K_GAP = 3;
 
-    // Union-Find for fast connectivity
+    // Fast equirectangular distance
+    const DEG2R = Math.PI / 180;
+    const avgLat = (nodeArr.reduce((s,e) => s + e[1].coord[0], 0) / nodeArr.length) * DEG2R;
+    const cosAvgLat = Math.cos(avgLat);
+    function fastDistDJ(aI, bI) {
+        const dl = aI.coord[0] - bI.coord[0];
+        const dn = (aI.coord[1] - bI.coord[1]) * cosAvgLat;
+        return Math.sqrt(dl*dl + dn*dn) * 111.32;
+    }
+
+    // Union-Find
     const ufMap = new Map();
     for (const [nId] of nodeArr) ufMap.set(nId, nId);
     function djFind(x) { while (ufMap.get(x) !== x) { ufMap.set(x, ufMap.get(ufMap.get(x))); x = ufMap.get(x); } return x; }
     function djUnion(a, b) { a = djFind(a); b = djFind(b); if (a === b) return false; ufMap.set(b, a); return true; }
-
-    // Internal edges already connect S<->E
     for (const [nId] of nodeArr) {
-        for (const e of tEdges.get(nId)) {
-            if (e.type === 'internal') djUnion(nId, e.to);
-        }
+        for (const e of tEdges.get(nId)) { if (e.type === 'internal') djUnion(nId, e.to); }
     }
 
-    // Spatial grid for nearest-neighbor
-    const DJ_GRID = 0.5;
+    // Adaptive spatial grid
+    const allCLats = nodeArr.map(e => e[1].coord[0]);
+    const allCLngs = nodeArr.map(e => e[1].coord[1]);
+    const djSpan = Math.max(Math.max(...allCLngs) - Math.min(...allCLngs), Math.max(...allCLats) - Math.min(...allCLats)) || 1;
+    const DJ_GRID = Math.max(0.01, Math.min(0.5, djSpan / 50));
     const djGrid = new Map();
     for (const [nId, nInfo] of nodeArr) {
         const key = Math.floor(nInfo.coord[1] / DJ_GRID) + ',' + Math.floor(nInfo.coord[0] / DJ_GRID);
@@ -5592,31 +5887,22 @@ function calcCrossSegmentDistance(a, b) {
         const gx0 = Math.floor(nInfo.coord[1] / DJ_GRID);
         const gy0 = Math.floor(nInfo.coord[0] / DJ_GRID);
         let candidates = [];
-        for (let r = 1; r <= 20 && candidates.length < K_GAP; r++) {
-            candidates = [];
+        for (let r = 0; r <= 5 && candidates.length < K_GAP; r++) {
             for (let dx = -r; dx <= r; dx++) {
                 for (let dy = -r; dy <= r; dy++) {
+                    if (r > 0 && Math.abs(dx) < r && Math.abs(dy) < r) continue;
                     const cell = djGrid.get((gx0 + dx) + ',' + (gy0 + dy));
                     if (!cell) continue;
                     for (const [mId, mInfo] of cell) {
                         if (mInfo.layerId === nInfo.layerId) continue;
-                        const d = haversineDistance(nInfo.coord[0], nInfo.coord[1], mInfo.coord[0], mInfo.coord[1]);
+                        const d = fastDistDJ(nInfo, mInfo);
                         candidates.push({ mId, d });
                     }
                 }
             }
-            candidates.sort((a, b) => a.d - b.d);
+            if (candidates.length >= K_GAP) break;
         }
-        // Fallback brute-force for very sparse regions
-        if (candidates.length < K_GAP) {
-            candidates = [];
-            for (const [mId, mInfo] of nodeArr) {
-                if (mInfo.layerId === nInfo.layerId) continue;
-                const d = haversineDistance(nInfo.coord[0], nInfo.coord[1], mInfo.coord[0], mInfo.coord[1]);
-                candidates.push({ mId, d });
-            }
-            candidates.sort((a, b) => a.d - b.d);
-        }
+        candidates.sort((a, b) => a.d - b.d);
         for (const { mId: bestId, d: bestDist } of candidates.slice(0, K_GAP)) {
             const gapCost = bestDist * 100;
             if (!tEdges.get(nId).some(e => e.to === bestId && e.type === 'gap')) {
@@ -5629,10 +5915,9 @@ function calcCrossSegmentDistance(a, b) {
         }
     }
 
-    // ─── STEP 4: Bridge disconnected components (Kruskal-style with Union-Find) ───
+        // ─── STEP 4: Bridge disconnected components (optimized with representatives) ───
     const compRoots = new Set(nodeIds.map(id => djFind(id)));
     if (compRoots.size > 1) {
-        // Group nodes by component
         const compNodes = new Map();
         for (const nId of nodeIds) {
             const r = djFind(nId);
@@ -5640,18 +5925,26 @@ function calcCrossSegmentDistance(a, b) {
             compNodes.get(r).push(nId);
         }
         const roots = Array.from(compNodes.keys());
-        // Find shortest bridge between each pair of components
+        // Use max 10 representative nodes per component for speed
+        const MAX_REP = 10;
+        const compReps = new Map();
+        for (const [root, nodes] of compNodes) {
+            if (nodes.length <= MAX_REP) { compReps.set(root, nodes); continue; }
+            const reps = [];
+            const step = Math.max(1, Math.floor(nodes.length / MAX_REP));
+            for (let k = 0; k < nodes.length && reps.length < MAX_REP; k += step) reps.push(nodes[k]);
+            compReps.set(root, reps);
+        }
         const bridges = [];
         for (let ci = 0; ci < roots.length; ci++) {
+            const rA = compReps.get(roots[ci]);
             for (let cj = ci + 1; cj < roots.length; cj++) {
+                const rB = compReps.get(roots[cj]);
                 let bestD = Infinity, bestA = null, bestB = null;
-                const nA = compNodes.get(roots[ci]), nB = compNodes.get(roots[cj]);
-                const [smaller, larger] = nA.length <= nB.length ? [nA, nB] : [nB, nA];
-                for (const a of smaller) {
+                for (const a of rA) {
                     const aI = tNodes.get(a);
-                    for (const b of larger) {
-                        const bI = tNodes.get(b);
-                        const d = haversineDistance(aI.coord[0], aI.coord[1], bI.coord[0], bI.coord[1]);
+                    for (const b of rB) {
+                        const d = fastDistDJ(aI, tNodes.get(b));
                         if (d < bestD) { bestD = d; bestA = a; bestB = b; }
                     }
                 }
@@ -5669,7 +5962,7 @@ function calcCrossSegmentDistance(a, b) {
         }
     }
 
-    // ─── STEP 5: Insert virtual nodes for A and B measurement points ───
+        // ─── STEP 5: Insert virtual nodes for A and B measurement points ───
     function insertVNode(layerId, vertexIdx, coord) {
         const layer = projectData.layers[layerId];
         const sId = layerId + ':s', eId = layerId + ':e';
