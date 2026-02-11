@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<!-- NexiMap KML Studio v2.7.3 - Removed measure button from properties panel (toolbar-only) -->
+<!-- NexiMap KML Studio v2.7.4 - Highlight used segments on map during measurement -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NexiMap KML Studio v2.7.3</title>
+<title>NexiMap KML Studio v2.7.4</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='2' width='28' height='28' rx='4' fill='%230096D6'/%3E%3Cpath d='M8 12L16 8L24 12L16 16Z' fill='white' opacity='0.9'/%3E%3Cpath d='M8 16L16 20L24 16' stroke='white' stroke-width='1.5' fill='none'/%3E%3Cpath d='M8 20L16 24L24 20' stroke='white' stroke-width='1.5' fill='none'/%3E%3C/svg%3E"/>
 <style>
 :root {
@@ -958,7 +958,7 @@ header {
     <div class="app-logo">
         <svg width="20" height="20" viewBox="0 0 32 32"><rect x="2" y="2" width="28" height="28" rx="4" fill="#0096D6"/><path d="M8 12L16 8L24 12L16 16Z" fill="white" opacity="0.9"/><path d="M8 16L16 20L24 16" stroke="white" stroke-width="1.5" fill="none"/><path d="M8 20L16 24L24 20" stroke="white" stroke-width="1.5" fill="none"/></svg>
         NexiMap KML Studio
-        <span class="ver">v2.7.3</span>
+        <span class="ver">v2.7.4</span>
     </div>
 
     <!-- File Menu -->
@@ -4834,7 +4834,12 @@ function handleMeasureClick(latlng, knownIdx, knownLayerId) {
 
         // Draw highlight polyline
         if (result.pathCoords.length > 1) {
-            measureLineLayer = L.polyline(result.pathCoords, { color: '#f59e0b', weight: 5, opacity: 0.7, dashArray: '10,6' }).addTo(map);
+            measureLineLayer = L.polyline(result.pathCoords, { color: '#f59e0b', weight: 6, opacity: 0.85, dashArray: '10,6' }).addTo(map);
+        }
+
+        // Dim all non-used layers and highlight used ones
+        if (result.usedLayerIds && result.usedLayerIds.length > 0) {
+            dimNonMeasuredLayers(result.usedLayerIds);
         }
 
         const est = result.distance * (1 + fiberSlackPct / 100);
@@ -5015,9 +5020,10 @@ function calcCrossSegmentDistance(a, b) {
         [pA, pB] = [pB, pA];
     }
 
-    // Step 6: Extract path coordinates from A to B
+    // Step 6: Extract path coordinates from A to B, collect used layer IDs
     let pathCoords = [];
     let segCount = 0;
+    const usedLayerIds = [];
 
     for (let si = pA.segIdx; si <= pB.segIdx; si++) {
         const seg = oriented[si];
@@ -5026,6 +5032,7 @@ function calcCrossSegmentDistance(a, b) {
         if (si === pB.segIdx) toV = pB.localIdx;
         const slice = seg.coords.slice(fromV, toV + 1);
         pathCoords = pathCoords.concat(slice);
+        usedLayerIds.push(seg.layerId);
         segCount++;
     }
 
@@ -5035,7 +5042,7 @@ function calcCrossSegmentDistance(a, b) {
         totalDist += haversineDistance(pathCoords[i][0], pathCoords[i][1], pathCoords[i+1][0], pathCoords[i+1][1]);
     }
 
-    return { distance: totalDist, pathCoords, segments: segCount };
+    return { distance: totalDist, pathCoords, segments: segCount, usedLayerIds };
 }
 
 // Get all line layers in folder order (depth-first, items order) — kept for other uses
@@ -5105,10 +5112,36 @@ window.ctxMeasureAB = function() {
     ctxTargetFolderId = null;
 };
 
+let measureDimmedLayers = []; // [{layerId, origOpacity}]
+
 function clearMeasureMarkers() {
     measureMarkers.forEach(m => map.removeLayer(m));
     measureMarkers = [];
     if (measureLineLayer) { map.removeLayer(measureLineLayer); measureLineLayer = null; }
+    restoreMeasuredLayers();
+}
+
+function dimNonMeasuredLayers(usedIds) {
+    restoreMeasuredLayers(); // clear any previous dimming
+    const usedSet = new Set(usedIds);
+    Object.values(projectData.layers).forEach(layer => {
+        if (!layer.visible || layer.type !== 'line' || !layer.leafletLayer) return;
+        if (!usedSet.has(layer.id)) {
+            // Dim non-used layers
+            measureDimmedLayers.push({ layerId: layer.id, origOpacity: layer.opacity || 1 });
+            layer.leafletLayer.setStyle({ opacity: 0.12 });
+        }
+    });
+}
+
+function restoreMeasuredLayers() {
+    measureDimmedLayers.forEach(({ layerId, origOpacity }) => {
+        const layer = projectData.layers[layerId];
+        if (layer && layer.leafletLayer) {
+            layer.leafletLayer.setStyle({ opacity: origOpacity });
+        }
+    });
+    measureDimmedLayers = [];
 }
 
 // Keep the old haversine-based function as fallback
