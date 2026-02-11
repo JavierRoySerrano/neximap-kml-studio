@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<!-- NexiMap KML Studio v2.3.1 - Compact color swatch everywhere (lines, pins, folders, multi) -->
+<!-- NexiMap KML Studio v2.4 - Smart vertex dots: viewport culling, zoom threshold, performance cap -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NexiMap KML Studio v2.3.1</title>
+<title>NexiMap KML Studio v2.4</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='2' width='28' height='28' rx='4' fill='%230096D6'/%3E%3Cpath d='M8 12L16 8L24 12L16 16Z' fill='white' opacity='0.9'/%3E%3Cpath d='M8 16L16 20L24 16' stroke='white' stroke-width='1.5' fill='none'/%3E%3Cpath d='M8 20L16 24L24 20' stroke='white' stroke-width='1.5' fill='none'/%3E%3C/svg%3E"/>
 <style>
 :root {
@@ -867,7 +867,7 @@ header {
     <div class="app-logo">
         <svg width="20" height="20" viewBox="0 0 32 32"><rect x="2" y="2" width="28" height="28" rx="4" fill="#0096D6"/><path d="M8 12L16 8L24 12L16 16Z" fill="white" opacity="0.9"/><path d="M8 16L16 20L24 16" stroke="white" stroke-width="1.5" fill="none"/><path d="M8 20L16 24L24 20" stroke="white" stroke-width="1.5" fill="none"/></svg>
         NexiMap KML Studio
-        <span class="ver">v2.3.1</span>
+        <span class="ver">v2.4</span>
     </div>
 
     <!-- File Menu -->
@@ -960,9 +960,9 @@ header {
                 <input type="checkbox" id="filterPins" checked onchange="applyLayerFilters()">
                 📍 Pins
             </label>
-            <label class="filter-toggle" title="Show vertex dots on line segments">
+            <label class="filter-toggle" title="Show vertex dots when zoomed in (configurable in Settings)">
                 <input type="checkbox" id="filterVertexDots" onchange="applyLayerFilters()">
-                ○ Vertices
+                ○ Vertices <span id="vertexZoomHint" style="font-size:9px;color:var(--text-muted);"></span>
             </label>
         </div>
         <div id="leftResize"></div>
@@ -1285,7 +1285,7 @@ header {
     </button>
     <div class="menu-sep"></div>
     <button class="menu-dropdown-item" onclick="openSlackSettings(); closeMenus();">
-        ⚙️ Fiber Slack Settings…
+        ⚙️ Settings…
     </button>
 </div>
 
@@ -1316,12 +1316,24 @@ header {
 <!-- Settings overlay -->
 <div class="settings-overlay" id="settingsOverlay">
     <div class="settings-dialog">
-        <h4>⚙️ Fiber Slack Settings</h4>
+        <h4>⚙️ Settings</h4>
         <div class="settings-row">
-            <label>Slack %</label>
+            <label>Fiber Slack %</label>
             <input type="number" id="settingsSlackPct" min="0" max="200" step="0.5" value="10">
         </div>
         <p style="font-size:10px;color:var(--text-muted);margin-bottom:8px;">Estimated distance = Geometric distance × (1 + slack%/100). Typical fiber slack: 5-15%.</p>
+        <div style="border-top:1px solid var(--border);margin:10px 0;padding-top:10px;">
+            <div class="settings-row">
+                <label>Vertex dots min zoom</label>
+                <input type="number" id="settingsVertexZoom" min="8" max="20" step="1" value="13">
+            </div>
+            <p style="font-size:10px;color:var(--text-muted);margin-bottom:4px;">Vertices only shown when zoomed in ≥ this level (8–20). Higher = fewer dots, better performance.</p>
+            <div class="settings-row">
+                <label>Max vertex dots</label>
+                <input type="number" id="settingsVertexMax" min="200" max="10000" step="100" value="2000">
+            </div>
+            <p style="font-size:10px;color:var(--text-muted);margin-bottom:8px;">Maximum dots rendered at once. Lower for slower devices.</p>
+        </div>
         <div class="settings-actions">
             <button class="prop-btn" onclick="closeSlackSettings()">Cancel</button>
             <button class="prop-btn primary" onclick="saveSlackSettings()">Save</button>
@@ -1984,8 +1996,11 @@ function renderMapLayers() {
     renderVertexDots();
 }
 
-// === VERTEX DOTS (v2.0) ===
+// === VERTEX DOTS (v2.4 — viewport-culled, zoom-gated, capped) ===
 let vertexDotMarkers = [];
+let vertexMinZoom = 13;   // Only show dots at zoom >= this
+let vertexMaxDots = 2000; // Max dots to render at once
+let vertexDotsScheduled = false;
 
 function renderVertexDots() {
     // Clear existing dots
@@ -1995,60 +2010,113 @@ function renderVertexDots() {
     const showDots = document.getElementById('filterVertexDots').checked;
     if (!showDots && !measureMode) return;
 
-    // In measure mode, always show dots for the selected line to make clicking easy
+    const zoom = map.getZoom();
+
+    // In measure mode: always show for selected line (but still viewport-cull)
+    // In normal mode: require minimum zoom level
+    if (!measureMode && zoom < vertexMinZoom) {
+        // Show a helpful toast on first attempt
+        if (showDots) {
+            toast('Zoom in to level ' + vertexMinZoom + '+ to see vertices (current: ' + Math.round(zoom) + ')', 'info');
+        }
+        return;
+    }
+
+    const bounds = map.getBounds();
     const layersToShow = measureMode
         ? [projectData.layers[selectedLayerId]].filter(Boolean)
         : Object.values(projectData.layers);
 
+    // Collect all visible vertices within viewport (with metadata)
+    const candidates = [];
     layersToShow.forEach(layer => {
         if (!layer.visible || layer.type !== 'line' || layer.coords.length < 2) return;
-        // Don't show dots if edit mode is showing draggable markers for this layer
         if (editMode && layer.id === selectedLayerId) return;
 
-        // Dots are draggable when: layer is selected, NOT in measure mode, NOT in edit mode
-        const canDrag = !measureMode && !editMode && selectedLayerIds.has(layer.id);
-
         layer.coords.forEach((coord, idx) => {
+            // Viewport culling: skip if outside visible bounds
+            if (coord[0] < bounds.getSouth() || coord[0] > bounds.getNorth() ||
+                coord[1] < bounds.getWest() || coord[1] > bounds.getEast()) return;
+
             const isEnd = idx === 0 || idx === layer.coords.length - 1;
-            const icon = L.divIcon({
-                className: isEnd ? 'vertex-dot-end' : 'vertex-dot',
-                iconSize: isEnd ? [10, 10] : [8, 8],
-                iconAnchor: isEnd ? [5, 5] : [4, 4]
-            });
-            const marker = L.marker(coord, { icon, interactive: true, draggable: canDrag, zIndexOffset: 600 }).addTo(map);
-
-            // In measure mode, clicking a dot triggers measure
-            marker.on('click', (e) => {
-                L.DomEvent.stopPropagation(e);
-                if (measureMode) {
-                    handleMeasureClick(e.latlng, idx, layer.id);
-                }
-            });
-
-            // Draggable: update layer coords in real-time
-            if (canDrag) {
-                marker.on('dragstart', () => {
-                    map.dragging.disable();
-                });
-                marker.on('drag', (e) => {
-                    const ll = e.target.getLatLng();
-                    layer.coords[idx] = [ll.lat, ll.lng];
-                    if (layer.leafletLayer) layer.leafletLayer.setLatLngs(layer.coords);
-                });
-                marker.on('dragend', (e) => {
-                    map.dragging.enable();
-                    const ll = e.target.getLatLng();
-                    layer.coords[idx] = [ll.lat, ll.lng];
-                    updatePropsPanel(); updateStatus();
-                });
-            }
-
-            vertexDotMarkers.push(marker);
+            candidates.push({ layer, coord, idx, isEnd });
         });
+    });
+
+    // Cap to prevent browser lag
+    const dotsToRender = candidates.length <= vertexMaxDots
+        ? candidates
+        : candidates.slice(0, vertexMaxDots);
+
+    if (candidates.length > vertexMaxDots && !measureMode) {
+        toast('Showing ' + vertexMaxDots + ' of ' + candidates.length + ' vertices in view. Zoom in more or adjust in Settings.', 'info');
+    }
+
+    dotsToRender.forEach(({ layer, coord, idx, isEnd }) => {
+        const canDrag = !measureMode && !editMode && selectedLayerIds.has(layer.id);
+        const icon = L.divIcon({
+            className: isEnd ? 'vertex-dot-end' : 'vertex-dot',
+            iconSize: isEnd ? [10, 10] : [8, 8],
+            iconAnchor: isEnd ? [5, 5] : [4, 4]
+        });
+        const marker = L.marker(coord, { icon, interactive: true, draggable: canDrag, zIndexOffset: 600 }).addTo(map);
+
+        marker.on('click', (e) => {
+            L.DomEvent.stopPropagation(e);
+            if (measureMode) {
+                handleMeasureClick(e.latlng, idx, layer.id);
+            }
+        });
+
+        if (canDrag) {
+            marker.on('dragstart', () => { map.dragging.disable(); });
+            marker.on('drag', (e) => {
+                const ll = e.target.getLatLng();
+                layer.coords[idx] = [ll.lat, ll.lng];
+                if (layer.leafletLayer) layer.leafletLayer.setLatLngs(layer.coords);
+            });
+            marker.on('dragend', (e) => {
+                map.dragging.enable();
+                const ll = e.target.getLatLng();
+                layer.coords[idx] = [ll.lat, ll.lng];
+                updatePropsPanel(); updateStatus();
+            });
+        }
+
+        vertexDotMarkers.push(marker);
     });
 }
 
-window.applyLayerFilters = function() { renderMapLayers(); };
+// Debounced re-render on pan/zoom (v2.4)
+function scheduleVertexDotsUpdate() {
+    const showDots = document.getElementById('filterVertexDots').checked;
+    if (!showDots && !measureMode) return;
+    if (vertexDotsScheduled) return;
+    vertexDotsScheduled = true;
+    requestAnimationFrame(() => {
+        vertexDotsScheduled = false;
+        renderVertexDots();
+    });
+    updateVertexZoomHint();
+}
+
+function updateVertexZoomHint() {
+    const hint = document.getElementById('vertexZoomHint');
+    if (!hint) return;
+    const zoom = Math.round(map.getZoom());
+    const showDots = document.getElementById('filterVertexDots').checked;
+    if (showDots && zoom < vertexMinZoom) {
+        hint.textContent = '(z' + zoom + '/' + vertexMinZoom + ')';
+        hint.style.color = 'var(--danger)';
+    } else if (showDots) {
+        hint.textContent = '(z' + zoom + ')';
+        hint.style.color = 'var(--success)';
+    } else {
+        hint.textContent = '';
+    }
+}
+
+window.applyLayerFilters = function() { renderMapLayers(); updateVertexZoomHint(); };
 
 function renderVertexMarkers(layer) {
     layer.vertexMarkers.forEach(m => map.removeLayer(m));
@@ -3521,6 +3589,8 @@ let fiberSlackPct = 10;
 
 window.openSlackSettings = function() {
     document.getElementById('settingsSlackPct').value = fiberSlackPct;
+    document.getElementById('settingsVertexZoom').value = vertexMinZoom;
+    document.getElementById('settingsVertexMax').value = vertexMaxDots;
     document.getElementById('settingsOverlay').classList.add('show');
 };
 window.closeSlackSettings = function() {
@@ -3528,8 +3598,12 @@ window.closeSlackSettings = function() {
 };
 window.saveSlackSettings = function() {
     fiberSlackPct = parseFloat(document.getElementById('settingsSlackPct').value) || 0;
+    vertexMinZoom = parseInt(document.getElementById('settingsVertexZoom').value) || 13;
+    vertexMaxDots = parseInt(document.getElementById('settingsVertexMax').value) || 2000;
     document.getElementById('settingsOverlay').classList.remove('show');
-    toast('Slack set to ' + fiberSlackPct + '%', 'success');
+    renderVertexDots();
+    updateVertexZoomHint();
+    toast('Settings saved', 'success');
     updatePropsPanel();
 };
 
@@ -4068,6 +4142,10 @@ function updateRulerDisplay() {
 
 // Hook into map click for ruler
 // We patch the main click handler below
+
+// Re-render vertex dots on pan/zoom (v2.4)
+map.on('moveend', () => { scheduleVertexDotsUpdate(); });
+map.on('zoomend', () => { scheduleVertexDotsUpdate(); });
 
 // Hook into map mousemove for ruler preview line
 map.on('mousemove', (e) => {
