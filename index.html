@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<!-- NexiMap KML Studio v1.6 - Map selector toggle/drag, pin GPS+desc, folder drag nesting, ruler, distance+slack, ctx overflow fix, pin types -->
+<!-- NexiMap KML Studio v1.7 - Draggable pins, pin type picker, editable GPS, crosshair cursor, compact pin color, tree pin icons -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NexiMap KML Studio v1.6</title>
+<title>NexiMap KML Studio v1.7</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='2' width='28' height='28' rx='4' fill='%230096D6'/%3E%3Cpath d='M8 12L16 8L24 12L16 16Z' fill='white' opacity='0.9'/%3E%3Cpath d='M8 16L16 20L24 16' stroke='white' stroke-width='1.5' fill='none'/%3E%3Cpath d='M8 20L16 24L24 20' stroke='white' stroke-width='1.5' fill='none'/%3E%3C/svg%3E"/>
 <style>
 :root {
@@ -518,6 +518,62 @@ header {
 }
 #logoOverlay:hover .logo-resize { opacity: 1; }
 
+
+/* Crosshair cursor for pin placement mode */
+.leaflet-container.pin-cursor { cursor: crosshair !important; }
+.leaflet-container.pin-cursor .leaflet-interactive { cursor: crosshair !important; }
+.leaflet-container.pin-cursor .leaflet-marker-icon { cursor: crosshair !important; }
+
+/* Draggable pin marker */
+.pin-marker.draggable-pin { cursor: grab; }
+.pin-marker.draggable-pin:active { cursor: grabbing; }
+
+/* Compact pin color swatch in properties */
+.prop-pin-color-row { display: flex; align-items: center; gap: 6px; }
+.prop-pin-color-current {
+    width: 24px; height: 24px; border-radius: 4px; cursor: pointer;
+    border: 2px solid #ccc; transition: all 0.15s; flex-shrink: 0;
+}
+.prop-pin-color-current:hover { border-color: #666; transform: scale(1.1); }
+.prop-pin-color-expand {
+    display: none; flex-wrap: wrap; gap: 3px; padding: 6px 0;
+}
+.prop-pin-color-expand.show { display: flex; }
+
+/* Pin type selector in properties */
+.prop-pin-type-row { display: flex; align-items: center; gap: 6px; }
+.prop-pin-type-current {
+    width: 28px; height: 36px; cursor: pointer; transition: transform 0.15s;
+}
+.prop-pin-type-current:hover { transform: scale(1.1); }
+.prop-pin-type-grid {
+    display: none; grid-template-columns: repeat(4, 1fr); gap: 4px; padding: 6px 0;
+}
+.prop-pin-type-grid.show { display: grid; }
+.prop-pin-type-opt {
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+    padding: 4px 2px; border: 2px solid transparent; border-radius: 4px;
+    cursor: pointer; transition: all 0.15s; background: #fafafa;
+}
+.prop-pin-type-opt:hover { background: var(--accent-light); border-color: var(--accent); }
+.prop-pin-type-opt.active { border-color: var(--accent); background: var(--bg-selected); }
+.prop-pin-type-opt svg { width: 20px; height: 28px; }
+.prop-pin-type-opt span { font-size: 8px; color: var(--text-muted); text-align: center; line-height: 1.1; }
+
+/* Tree item pin SVG icon */
+.tree-pin-icon { width: 12px; height: 16px; flex-shrink: 0; }
+.tree-line-icon { width: 14px; height: 8px; flex-shrink: 0; }
+
+/* Editable GPS input */
+.prop-gps-input {
+    font-size: 11px; font-family: monospace; color: var(--text);
+    border: 1px solid transparent; border-radius: 3px;
+    padding: 1px 4px; background: transparent; width: 110px;
+    transition: all 0.15s;
+}
+.prop-gps-input:hover { border-color: var(--border); background: white; }
+.prop-gps-input:focus { border-color: var(--accent); background: white; outline: none; }
+
 /* Pin marker on map */
 .pin-marker {
     width: 24px; height: 36px; position: relative;
@@ -634,7 +690,7 @@ header {
     <div class="app-logo">
         <svg width="20" height="20" viewBox="0 0 32 32"><rect x="2" y="2" width="28" height="28" rx="4" fill="#0096D6"/><path d="M8 12L16 8L24 12L16 16Z" fill="white" opacity="0.9"/><path d="M8 16L16 20L24 16" stroke="white" stroke-width="1.5" fill="none"/><path d="M8 20L16 24L24 20" stroke="white" stroke-width="1.5" fill="none"/></svg>
         NexiMap KML Studio
-        <span class="ver">v1.6</span>
+        <span class="ver">v1.7</span>
     </div>
 
     <!-- File Menu -->
@@ -777,22 +833,30 @@ header {
                     <span id="propType" style="font-size:11px;color:var(--text-muted);">—</span>
                 </div>
             </div>
-            </div>
-            <!-- Pin GPS + Description (Enhancement 2) -->
+            <!-- Pin GPS + Description + Pin Type (Enhancement 2 + v1.7) -->
             <div class="prop-section" id="propPinInfo" style="display:none;">
                 <h4>Pin Location</h4>
                 <div class="prop-row">
                     <span class="prop-label">Latitude</span>
-                    <span id="propPinLat" style="font-size:11px;color:var(--text);font-family:monospace;">—</span>
+                    <input class="prop-gps-input" type="text" id="propPinLat" value="—" onchange="updatePinGPS('lat', this.value)" onkeydown="if(event.key==='Enter'){this.blur();}">
                 </div>
                 <div class="prop-row">
                     <span class="prop-label">Longitude</span>
-                    <span id="propPinLng" style="font-size:11px;color:var(--text);font-family:monospace;">—</span>
+                    <input class="prop-gps-input" type="text" id="propPinLng" value="—" onchange="updatePinGPS('lng', this.value)" onkeydown="if(event.key==='Enter'){this.blur();}">
                 </div>
                 <div class="prop-row" style="align-items:flex-start;">
                     <span class="prop-label">Note</span>
                     <textarea class="prop-input" id="propPinDesc" rows="3" style="resize:vertical;min-height:40px;" onchange="updatePinDescription(this.value)" placeholder="Add a description..."></textarea>
                 </div>
+                <h4 style="margin-top:8px;">Pin Type</h4>
+                <div class="prop-row">
+                    <span class="prop-label">Icon</span>
+                    <div class="prop-pin-type-row">
+                        <div id="propPinTypeCurrent" class="prop-pin-type-current" onclick="togglePropPinTypeGrid()" title="Click to change pin type"></div>
+                        <span id="propPinTypeName" style="font-size:10px;color:var(--text-muted);">Default</span>
+                    </div>
+                </div>
+                <div class="prop-pin-type-grid" id="propPinTypeGrid"></div>
             </div>
             <!-- Distance info for lines (Enhancement 4/5) -->
             <div class="prop-section" id="propDistance" style="display:none;">
@@ -809,13 +873,30 @@ header {
                     <span class="prop-label">Slack</span>
                     <span id="propSlackPct" style="font-size:11px;color:var(--text-muted);">—</span>
                 </div>
+            </div>
             <div class="prop-section" id="propStyle" style="display:none;">
                 <h4>Style</h4>
-                <div class="prop-row">
+                <!-- Compact color (pins): single swatch expands on click -->
+                <div class="prop-row" id="propColorCompactRow" style="display:none;">
+                    <span class="prop-label">Color</span>
+                    <div class="prop-pin-color-row">
+                        <div id="propColorCompactSwatch" class="prop-pin-color-current" onclick="togglePinColorExpand()" title="Click to change color"></div>
+                        <span id="propColorCompactHex" style="font-size:10px;color:var(--text-muted);font-family:monospace;"></span>
+                    </div>
+                </div>
+                <div class="prop-pin-color-expand" id="propColorExpandPanel">
+                    <div id="propColorExpandSwatches" style="display:flex;flex-wrap:wrap;gap:3px;"></div>
+                    <div style="display:flex;align-items:center;gap:4px;margin-top:4px;">
+                        <input class="prop-input" type="color" id="propColorExpandCustom" value="#3b82f6" onchange="updateSelectedColor(this.value); updateCompactColorDisplay();" style="width:28px;height:24px;padding:1px;flex:none;">
+                        <span style="font-size:10px;color:var(--text-muted);">Custom</span>
+                    </div>
+                </div>
+                <!-- Full color (lines): full palette always visible -->
+                <div class="prop-row" id="propColorFullRow">
                     <span class="prop-label">Color</span>
                     <div id="propColorSwatches" style="display:flex;flex-wrap:wrap;gap:3px;flex:1;"></div>
                 </div>
-                <div class="prop-row" style="margin-top:2px;">
+                <div class="prop-row" style="margin-top:2px;" id="propColorFullCustomRow">
                     <span class="prop-label"></span>
                     <input class="prop-input" type="color" id="propColorCustom" value="#3b82f6" onchange="updateSelectedColor(this.value)" style="width:28px;height:24px;padding:1px;flex:none;">
                     <span style="font-size:10px;color:var(--text-muted);">Custom</span>
@@ -1558,13 +1639,29 @@ function renderMapLayers() {
         } else if (layer.type === 'point' && layer.coords.length > 0) {
             const pinSvg = getPinSvg(layer.pinType || 'default', layer.color);
             const icon = L.divIcon({
-                className: 'pin-marker',
+                className: 'pin-marker draggable-pin',
                 html: pinSvg,
                 iconSize: [24, 36],
                 iconAnchor: [12, 36]
             });
-            layer.leafletLayer = L.marker(layer.coords[0], { icon, interactive: true }).addTo(map);
+            layer.leafletLayer = L.marker(layer.coords[0], { icon, interactive: true, draggable: true }).addTo(map);
             layer.leafletLayer.on('click', (e) => { L.DomEvent.stopPropagation(e); selectLayer(layer.id); });
+            // Draggable pin: update coords on drag
+            layer.leafletLayer.on('mousedown', () => { map.dragging.disable(); });
+            layer.leafletLayer.on('dragstart', () => { map.dragging.disable(); });
+            layer.leafletLayer.on('drag', (e) => {
+                const ll = e.target.getLatLng();
+                layer.coords[0] = [ll.lat, ll.lng];
+                if (selectedLayerId === layer.id) updatePropsPanel();
+            });
+            layer.leafletLayer.on('dragend', (e) => {
+                map.dragging.enable();
+                const ll = e.target.getLatLng();
+                layer.coords[0] = [ll.lat, ll.lng];
+                layer.originalCoords = JSON.parse(JSON.stringify(layer.coords));
+                if (selectedLayerId === layer.id) updatePropsPanel();
+                toast('Pin moved to ' + ll.lat.toFixed(4) + ', ' + ll.lng.toFixed(4), 'info');
+            });
         }
 
         if (editMode && layer.id === selectedLayerId && layer.type === 'line') {
@@ -1709,10 +1806,12 @@ function createFolderEl(folder) {
         item.className = 'tree-item' + (selectedLayerId === layer.id ? ' selected' : '');
         item.draggable = true;
 
-        const typeIcon = layer.type === 'line' ? '━' : '●';
+        const typeIcon = layer.type === 'line'
+            ? '<svg class="tree-line-icon" viewBox="0 0 20 8" fill="none"><polyline points="1,6 6,2 14,5 19,1" stroke="' + layer.color + '" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+            : '<svg class="tree-pin-icon" viewBox="0 0 12 16"><path d="M6 0C2.7 0 0 2.7 0 6c0 4.5 6 10 6 10s6-5.5 6-10C12 2.7 9.3 0 6 0z" fill="' + layer.color + '"/><circle cx="6" cy="6" r="2.2" fill="white" opacity="0.9"/></svg>';
         item.innerHTML = `
             <span class="tree-item-color" style="background:${layer.color}"></span>
-            <span style="font-size:10px;color:${layer.color};">${typeIcon}</span>
+            ${typeIcon}
             <span class="tree-item-name">${esc(layer.name)}</span>
             <span class="tree-item-pts">${layer.coords.length}</span>
             <span class="tree-item-vis ${layer.visible ? '' : 'hidden-item'}" data-id="${layer.id}">
@@ -1809,12 +1908,17 @@ function updatePropsPanel() {
     show('propNone', false); show('propName', true); show('propStyle', true);
     show('propSimplify', layer.type === 'line'); show('propActions', true);
 
-    // Pin info (Enhancement 2)
+    // Pin info (Enhancement 2 + v1.7 editable GPS + pin type)
     show('propPinInfo', layer.type === 'point');
     if (layer.type === 'point' && layer.coords.length > 0) {
-        document.getElementById('propPinLat').textContent = layer.coords[0][0].toFixed(6);
-        document.getElementById('propPinLng').textContent = layer.coords[0][1].toFixed(6);
+        document.getElementById('propPinLat').value = layer.coords[0][0].toFixed(6);
+        document.getElementById('propPinLng').value = layer.coords[0][1].toFixed(6);
         document.getElementById('propPinDesc').value = layer.description || '';
+        // Pin type in properties
+        const pt = PIN_TYPES.find(p => p.id === (layer.pinType || 'default')) || PIN_TYPES[0];
+        document.getElementById('propPinTypeCurrent').innerHTML = pt.svg(layer.color);
+        document.getElementById('propPinTypeName').textContent = pt.name;
+        renderPropPinTypeGrid(layer);
     }
 
     // Distance info (Enhancement 4/5)
@@ -1831,19 +1935,47 @@ function updatePropsPanel() {
     document.getElementById('propPointCount').textContent = layer.coords.length + (layer.type === 'line' ? ' vertices' : ' (pin)');
     document.getElementById('propType').textContent = layer.type === 'line' ? 'LineString' : 'Pin Marker';
 
-    // Render color swatches
-    const swatchContainer = document.getElementById('propColorSwatches');
-    swatchContainer.innerHTML = '';
-    GIS_COLORS.forEach(c => {
-        const s = document.createElement('div');
-        s.className = 'prop-color-swatch' + (c === layer.color ? ' active' : '');
-        s.style.background = c;
-        if (c === '#ffffff') s.style.border = '2px solid #ddd';
-        s.addEventListener('click', () => { updateSelectedColor(c); updatePropsPanel(); });
-        swatchContainer.appendChild(s);
-    });
-    document.getElementById('propColorCustom').value = layer.color;
-    document.getElementById('propColorHex').textContent = layer.color;
+    // Render color: compact for pins, full for lines
+    const isPin = layer.type === 'point';
+    document.getElementById('propColorCompactRow').style.display = isPin ? '' : 'none';
+    document.getElementById('propColorFullRow').style.display = isPin ? 'none' : '';
+    document.getElementById('propColorFullCustomRow').style.display = isPin ? 'none' : '';
+    // Close expanded panel on selection change
+    document.getElementById('propColorExpandPanel').classList.remove('show');
+
+    if (isPin) {
+        // Compact: single swatch
+        document.getElementById('propColorCompactSwatch').style.background = layer.color;
+        if (layer.color === '#ffffff') document.getElementById('propColorCompactSwatch').style.borderColor = '#ddd';
+        else document.getElementById('propColorCompactSwatch').style.borderColor = '#ccc';
+        document.getElementById('propColorCompactHex').textContent = layer.color;
+        document.getElementById('propColorExpandCustom').value = layer.color;
+        // Render expand swatches
+        const expandContainer = document.getElementById('propColorExpandSwatches');
+        expandContainer.innerHTML = '';
+        GIS_COLORS.forEach(c => {
+            const s = document.createElement('div');
+            s.className = 'prop-color-swatch' + (c === layer.color ? ' active' : '');
+            s.style.background = c;
+            if (c === '#ffffff') s.style.border = '2px solid #ddd';
+            s.addEventListener('click', () => { updateSelectedColor(c); updateCompactColorDisplay(); updatePropsPanel(); });
+            expandContainer.appendChild(s);
+        });
+    } else {
+        // Full: all swatches visible
+        const swatchContainer = document.getElementById('propColorSwatches');
+        swatchContainer.innerHTML = '';
+        GIS_COLORS.forEach(c => {
+            const s = document.createElement('div');
+            s.className = 'prop-color-swatch' + (c === layer.color ? ' active' : '');
+            s.style.background = c;
+            if (c === '#ffffff') s.style.border = '2px solid #ddd';
+            s.addEventListener('click', () => { updateSelectedColor(c); updatePropsPanel(); });
+            swatchContainer.appendChild(s);
+        });
+        document.getElementById('propColorCustom').value = layer.color;
+        document.getElementById('propColorHex').textContent = layer.color;
+    }
 
     document.getElementById('propWidth').value = layer.width;
     document.getElementById('propWidthVal').textContent = layer.width;
@@ -2060,6 +2192,8 @@ map.on('click', (e) => {
         toast('Pin "' + name + '" placed', 'success');
         pinMode = false; document.getElementById('btnPlacePin').classList.remove('active');
         document.getElementById('editBanner').classList.remove('show');
+        const lc = document.querySelector('.leaflet-container');
+        if (lc) lc.classList.remove('pin-cursor');
         return;
     }
     // Draw mode
@@ -2458,8 +2592,12 @@ window.togglePinMode = function() {
     if (pinMode) {
         document.getElementById('editBanner').textContent = '📍 PIN MODE — Click on map to place a marker, Escape to cancel';
         document.getElementById('editBanner').classList.add('show');
+        const lc = document.querySelector('.leaflet-container');
+        if (lc) lc.classList.add('pin-cursor');
     } else {
         document.getElementById('editBanner').classList.remove('show');
+        const lc = document.querySelector('.leaflet-container');
+        if (lc) lc.classList.remove('pin-cursor');
     }
     toast(pinMode ? 'Click on map to place a pin' : 'Pin mode OFF', 'info');
 };
@@ -2710,7 +2848,7 @@ document.addEventListener('keydown', (e) => {
     if (e.key === 'Delete' && selectedLayerId) { deleteSelected(); }
     if (e.key === 'Escape') {
         if (measureMode) { measureMode = false; clearMeasureMarkers(); document.getElementById('btnMeasurePath').classList.remove('active'); if (!editMode) document.getElementById('editBanner').classList.remove('show'); toast('Measure cancelled', 'info'); }
-        else if (pinMode) { pinMode = false; document.getElementById('btnPlacePin').classList.remove('active'); document.getElementById('editBanner').classList.remove('show'); toast('Pin mode cancelled', 'info'); }
+        else if (pinMode) { pinMode = false; document.getElementById('btnPlacePin').classList.remove('active'); document.getElementById('editBanner').classList.remove('show'); const lc2 = document.querySelector('.leaflet-container'); if (lc2) lc2.classList.remove('pin-cursor'); toast('Pin mode cancelled', 'info'); }
         else if (drawMode) { drawCoords = []; if (drawPreviewLayer) { map.removeLayer(drawPreviewLayer); drawPreviewLayer = null; } drawMode = false; document.getElementById('btnDrawLine').classList.remove('active'); document.getElementById('editBanner').classList.remove('show'); toast('Draw cancelled', 'info'); }
         else if (editMode) toggleEditMode();
         if (addPointMode) toggleAddPointMode();
@@ -2795,6 +2933,15 @@ const PIN_TYPES = [
     { id: 'server', name: 'Data Center', svg: (c) => '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="36" viewBox="0 0 24 36"><rect x="2" y="2" width="20" height="22" rx="2" fill="'+c+'"/><polygon points="12,36 8,24 16,24" fill="'+c+'"/><rect x="5" y="5" width="14" height="4" rx="1" fill="white" opacity="0.8"/><rect x="5" y="11" width="14" height="4" rx="1" fill="white" opacity="0.8"/><rect x="5" y="17" width="14" height="4" rx="1" fill="white" opacity="0.8"/><circle cx="16" cy="7" r="1" fill="'+c+'"/><circle cx="16" cy="13" r="1" fill="'+c+'"/><circle cx="16" cy="19" r="1" fill="'+c+'"/></svg>' },
     { id: 'splice', name: 'Splice', svg: (c) => '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="36" viewBox="0 0 24 36"><ellipse cx="12" cy="12" rx="10" ry="7" fill="'+c+'"/><polygon points="12,36 9,19 15,19" fill="'+c+'"/><line x1="5" y1="12" x2="19" y2="12" stroke="white" stroke-width="2"/><circle cx="10" cy="12" r="1.5" fill="white"/><circle cx="14" cy="12" r="1.5" fill="white"/></svg>' },
     { id: 'manhole', name: 'Manhole', svg: (c) => '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="36" viewBox="0 0 24 36"><rect x="2" y="4" width="20" height="18" rx="9" fill="'+c+'"/><polygon points="12,36 9,22 15,22" fill="'+c+'"/><ellipse cx="12" cy="13" rx="6" ry="5" fill="none" stroke="white" stroke-width="1.5"/><line x1="6" y1="13" x2="18" y2="13" stroke="white" stroke-width="1.5"/><line x1="12" y1="8" x2="12" y2="18" stroke="white" stroke-width="1.5"/></svg>' },
+    { id: 'antenna', name: 'Antenna', svg: (c) => '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="36" viewBox="0 0 24 36"><rect x="10" y="10" width="4" height="16" fill="'+c+'"/><polygon points="12,36 9,26 15,26" fill="'+c+'"/><line x1="12" y1="2" x2="12" y2="10" stroke="'+c+'" stroke-width="2"/><path d="M6 4a8 8 0 0 1 12 0" fill="none" stroke="white" stroke-width="1.5"/><path d="M8 7a5 5 0 0 1 8 0" fill="none" stroke="white" stroke-width="1.5"/><circle cx="12" cy="2" r="2" fill="white"/></svg>' },
+    { id: 'pole', name: 'Pole', svg: (c) => '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="36" viewBox="0 0 24 36"><rect x="10.5" y="2" width="3" height="34" fill="'+c+'"/><line x1="4" y1="8" x2="20" y2="8" stroke="'+c+'" stroke-width="2.5"/><line x1="6" y1="14" x2="18" y2="14" stroke="'+c+'" stroke-width="2"/><circle cx="6" cy="8" r="1.5" fill="white"/><circle cx="18" cy="8" r="1.5" fill="white"/><circle cx="8" cy="14" r="1.2" fill="white"/><circle cx="16" cy="14" r="1.2" fill="white"/></svg>' },
+    { id: 'cabinet', name: 'Cabinet', svg: (c) => '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="36" viewBox="0 0 24 36"><rect x="3" y="3" width="18" height="19" rx="2" fill="'+c+'"/><polygon points="12,36 8,22 16,22" fill="'+c+'"/><line x1="12" y1="5" x2="12" y2="20" stroke="white" stroke-width="1.2"/><rect x="5" y="5" width="5" height="13" rx="1" fill="none" stroke="white" stroke-width="1" opacity="0.7"/><rect x="14" y="5" width="5" height="13" rx="1" fill="none" stroke="white" stroke-width="1" opacity="0.7"/><circle cx="9" cy="16" r="0.8" fill="white"/><circle cx="15" cy="16" r="0.8" fill="white"/></svg>' },
+    { id: 'exchange', name: 'Exchange', svg: (c) => '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="36" viewBox="0 0 24 36"><rect x="2" y="4" width="20" height="18" rx="2" fill="'+c+'"/><polygon points="12,36 8,22 16,22" fill="'+c+'"/><rect x="5" y="6" width="14" height="3" rx="1" fill="white" opacity="0.8"/><rect x="5" y="11" width="14" height="3" rx="1" fill="white" opacity="0.8"/><rect x="5" y="16" width="14" height="3" rx="1" fill="white" opacity="0.8"/><path d="M4 7h2M4 12h2M4 17h2" stroke="white" stroke-width="0.8"/></svg>' },
+    { id: 'warning', name: 'Warning', svg: (c) => '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="36" viewBox="0 0 24 36"><polygon points="12,1 23,22 1,22" fill="'+c+'"/><polygon points="12,36 9,22 15,22" fill="'+c+'"/><line x1="12" y1="8" x2="12" y2="15" stroke="white" stroke-width="2.5" stroke-linecap="round"/><circle cx="12" cy="18.5" r="1.5" fill="white"/></svg>' },
+    { id: 'cross', name: 'Marker X', svg: (c) => '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="36" viewBox="0 0 24 36"><circle cx="12" cy="12" r="11" fill="'+c+'"/><polygon points="12,36 8,22 16,22" fill="'+c+'"/><line x1="7" y1="7" x2="17" y2="17" stroke="white" stroke-width="2.5" stroke-linecap="round"/><line x1="17" y1="7" x2="7" y2="17" stroke="white" stroke-width="2.5" stroke-linecap="round"/></svg>' },
+    { id: 'info', name: 'Info', svg: (c) => '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="36" viewBox="0 0 24 36"><circle cx="12" cy="12" r="11" fill="'+c+'"/><polygon points="12,36 8,22 16,22" fill="'+c+'"/><circle cx="12" cy="7" r="1.8" fill="white"/><rect x="10.2" y="10.5" width="3.6" height="8" rx="1" fill="white"/></svg>' },
+    { id: 'check', name: 'Complete', svg: (c) => '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="36" viewBox="0 0 24 36"><circle cx="12" cy="12" r="11" fill="'+c+'"/><polygon points="12,36 8,22 16,22" fill="'+c+'"/><polyline points="7,12 10.5,16 17,8" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>' },
+    { id: 'wrench', name: 'Repair', svg: (c) => '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="36" viewBox="0 0 24 36"><circle cx="12" cy="12" r="11" fill="'+c+'"/><polygon points="12,36 8,22 16,22" fill="'+c+'"/><path d="M8 8l2 2-1.5 1.5L10 13l3-3 1.5 1.5L16 10l-2-2c1.5-0.5 3.2 0 4 1.2a3.5 3.5 0 0 1-1 4.3L11 19.5a3.5 3.5 0 0 1-4.3 1 3.5 3.5 0 0 1-1.2-4L8 8z" fill="white" opacity="0.9"/></svg>' },
 ];
 
 let selectedPinType = 'default';
@@ -2882,6 +3029,65 @@ window.updatePinDescription = function(val) {
     const l = projectData.layers[selectedLayerId];
     if (l && l.type === 'point') l.description = val;
 };
+
+
+// === PIN GPS EDITING (v1.7) ===
+window.updatePinGPS = function(which, val) {
+    const l = projectData.layers[selectedLayerId];
+    if (!l || l.type !== 'point') return;
+    const num = parseFloat(val);
+    if (isNaN(num)) { toast('Invalid coordinate value', 'error'); updatePropsPanel(); return; }
+    if (which === 'lat') {
+        if (num < -90 || num > 90) { toast('Latitude must be between -90 and 90', 'error'); updatePropsPanel(); return; }
+        l.coords[0][0] = num;
+    } else {
+        if (num < -180 || num > 180) { toast('Longitude must be between -180 and 180', 'error'); updatePropsPanel(); return; }
+        l.coords[0][1] = num;
+    }
+    l.originalCoords = JSON.parse(JSON.stringify(l.coords));
+    renderMapLayers();
+    // Pan map to new location
+    map.panTo(l.coords[0]);
+    toast('Pin moved to ' + l.coords[0][0].toFixed(4) + ', ' + l.coords[0][1].toFixed(4), 'info');
+};
+
+// === COMPACT PIN COLOR TOGGLE (v1.7) ===
+window.togglePinColorExpand = function() {
+    document.getElementById('propColorExpandPanel').classList.toggle('show');
+};
+window.updateCompactColorDisplay = function() {
+    const l = projectData.layers[selectedLayerId];
+    if (!l) return;
+    document.getElementById('propColorCompactSwatch').style.background = l.color;
+    document.getElementById('propColorCompactHex').textContent = l.color;
+    // Also update pin type icon color
+    if (l.type === 'point') {
+        const pt = PIN_TYPES.find(p => p.id === (l.pinType || 'default')) || PIN_TYPES[0];
+        document.getElementById('propPinTypeCurrent').innerHTML = pt.svg(l.color);
+    }
+};
+
+// === PIN TYPE IN PROPERTIES PANEL (v1.7) ===
+window.togglePropPinTypeGrid = function() {
+    document.getElementById('propPinTypeGrid').classList.toggle('show');
+};
+function renderPropPinTypeGrid(layer) {
+    const grid = document.getElementById('propPinTypeGrid');
+    grid.innerHTML = '';
+    grid.classList.remove('show');
+    PIN_TYPES.forEach(pt => {
+        const opt = document.createElement('div');
+        opt.className = 'prop-pin-type-opt' + (pt.id === (layer.pinType || 'default') ? ' active' : '');
+        opt.innerHTML = pt.svg(layer.color) + '<span>' + pt.name + '</span>';
+        opt.addEventListener('click', () => {
+            layer.pinType = pt.id;
+            renderMapLayers();
+            updatePropsPanel();
+            toast('Pin type: ' + pt.name, 'info');
+        });
+        grid.appendChild(opt);
+    });
+}
 
 // === HAVERSINE DISTANCE UTILITY ===
 function haversineDistance(lat1, lon1, lat2, lon2) {
