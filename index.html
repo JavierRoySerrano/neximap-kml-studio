@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<!-- NexiMap KML Studio v2.9.4 - Topology diagram viewer for segment connectivity -->
+<!-- NexiMap KML Studio v2.9.6 - Fix topology canvas sizing (show modal before measuring) -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NexiMap KML Studio v2.9.4</title>
+<title>NexiMap KML Studio v2.9.6</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='2' width='28' height='28' rx='4' fill='%230096D6'/%3E%3Cpath d='M8 12L16 8L24 12L16 16Z' fill='white' opacity='0.9'/%3E%3Cpath d='M8 16L16 20L24 16' stroke='white' stroke-width='1.5' fill='none'/%3E%3Cpath d='M8 20L16 24L24 20' stroke='white' stroke-width='1.5' fill='none'/%3E%3C/svg%3E"/>
 <style>
 :root {
@@ -1004,7 +1004,7 @@ header {
     <div class="app-logo">
         <svg width="20" height="20" viewBox="0 0 32 32"><rect x="2" y="2" width="28" height="28" rx="4" fill="#0096D6"/><path d="M8 12L16 8L24 12L16 16Z" fill="white" opacity="0.9"/><path d="M8 16L16 20L24 16" stroke="white" stroke-width="1.5" fill="none"/><path d="M8 20L16 24L24 20" stroke="white" stroke-width="1.5" fill="none"/></svg>
         NexiMap KML Studio
-        <span class="ver">v2.9.4</span>
+        <span class="ver">v2.9.6</span>
     </div>
 
     <!-- File Menu -->
@@ -4874,6 +4874,7 @@ function showDistancePanel(data) {
 window.closeDistancePanel = function() {
     const dp = document.getElementById('distancePanel');
     dp.classList.remove('show', 'minimized');
+    dp.style.position = 'absolute';
     dp.style.left = '50%'; dp.style.top = ''; dp.style.bottom = '20px';
     dp.style.transform = 'translateX(-50%)';
     dp.style.height = ''; dp.style.width = '';
@@ -4889,30 +4890,32 @@ window.toggleDistMinimize = function() {
 
 // Draggable distance panel
 (function() {
-    let dragEl = null, offsetX = 0, offsetY = 0, dragging = false;
+    let dragging = false, offsetX = 0, offsetY = 0;
+    const getPanel = () => document.getElementById('distancePanel');
     document.addEventListener('mousedown', function(e) {
         const handle = e.target.closest('#distDragHandle');
         if (!handle) return;
         if (e.target.tagName === 'BUTTON') return;
-        dragEl = document.getElementById('distancePanel');
-        const rect = dragEl.getBoundingClientRect();
-        // Convert from centered to absolute positioning FIRST
-        dragEl.style.transform = 'none';
-        dragEl.style.bottom = 'auto';
-        dragEl.style.left = rect.left + 'px';
-        dragEl.style.top = rect.top + 'px';
-        // Now calculate offset from the repositioned element
+        const dp = getPanel();
+        const rect = dp.getBoundingClientRect();
         offsetX = e.clientX - rect.left;
         offsetY = e.clientY - rect.top;
+        // Immediately switch to fixed positioning at current visual location
+        dp.style.position = 'fixed';
+        dp.style.left = rect.left + 'px';
+        dp.style.top = rect.top + 'px';
+        dp.style.bottom = 'auto';
+        dp.style.transform = 'none';
         dragging = true;
         e.preventDefault();
     });
     document.addEventListener('mousemove', function(e) {
-        if (!dragging || !dragEl) return;
-        dragEl.style.left = (e.clientX - offsetX) + 'px';
-        dragEl.style.top = (e.clientY - offsetY) + 'px';
+        if (!dragging) return;
+        const dp = getPanel();
+        dp.style.left = (e.clientX - offsetX) + 'px';
+        dp.style.top = (e.clientY - offsetY) + 'px';
     });
-    document.addEventListener('mouseup', function() { dragging = false; dragEl = null; });
+    document.addEventListener('mouseup', function() { dragging = false; });
 })();
 
 // ═══════════════════════════════════════════════════════════
@@ -4976,27 +4979,32 @@ window.showTopologyDiagram = function() {
     const lngRange = maxLng - minLng || 1;
     const latRange = maxLat - minLat || 1;
 
-    const canvas = document.getElementById('topoCanvas');
-    const rect = canvas.parentElement.getBoundingClientRect();
-    canvas.width = rect.width * window.devicePixelRatio;
-    canvas.height = rect.height * window.devicePixelRatio;
-    canvas.style.width = rect.width + 'px';
-    canvas.style.height = rect.height + 'px';
-
-    const padding = 80;
-    const w = rect.width - padding * 2;
-    const h = rect.height - padding * 2;
-
-    tNodes.forEach(n => {
-        n.x = padding + ((n.geoLng - minLng) / lngRange) * w;
-        n.y = padding + ((maxLat - n.geoLat) / latRange) * h; // flip Y for geo
-    });
-
-    topoState = { nodes: tNodes, edges: tEdges, zoom: 1, panX: 0, panY: 0, dragging: null, hovered: null, canvasW: rect.width, canvasH: rect.height };
-
+    // Show modal FIRST so canvas has dimensions
     document.getElementById('topoModal').classList.add('show');
-    renderTopology();
-    setupTopoInteraction();
+
+    // Use requestAnimationFrame to ensure layout is computed
+    requestAnimationFrame(() => {
+        const canvas = document.getElementById('topoCanvas');
+        const rect = canvas.parentElement.getBoundingClientRect();
+        canvas.width = rect.width * window.devicePixelRatio;
+        canvas.height = rect.height * window.devicePixelRatio;
+        canvas.style.width = rect.width + 'px';
+        canvas.style.height = rect.height + 'px';
+
+        const padding = 80;
+        const w = rect.width - padding * 2;
+        const h = rect.height - padding * 2;
+
+        tNodes.forEach(n => {
+            n.x = padding + ((n.geoLng - minLng) / lngRange) * w;
+            n.y = padding + ((maxLat - n.geoLat) / latRange) * h;
+        });
+
+        topoState = { nodes: tNodes, edges: tEdges, zoom: 1, panX: 0, panY: 0, dragging: null, hovered: null, canvasW: rect.width, canvasH: rect.height };
+
+        renderTopology();
+        setupTopoInteraction();
+    });
 };
 
 function renderTopology() {
@@ -5325,11 +5333,13 @@ function calcCrossSegmentDistance(a, b) {
             if (d < bestDist) { bestDist = d; bestId = mId; }
         }
         if (bestId) {
+            // Penalize gap edges heavily (x100) so Dijkstra strongly prefers actual cable segments
+            const gapCost = bestDist * 100;
             if (!tEdges.get(nId).some(e => e.to === bestId && e.type === 'gap')) {
-                tEdges.get(nId).push({ to: bestId, cost: bestDist, type: 'gap' });
+                tEdges.get(nId).push({ to: bestId, cost: gapCost, type: 'gap', realDist: bestDist });
             }
             if (!tEdges.get(bestId).some(e => e.to === nId && e.type === 'gap')) {
-                tEdges.get(bestId).push({ to: nId, cost: bestDist, type: 'gap' });
+                tEdges.get(bestId).push({ to: nId, cost: gapCost, type: 'gap', realDist: bestDist });
             }
         }
     }
@@ -5373,8 +5383,9 @@ function calcCrossSegmentDistance(a, b) {
             }
         }
         if (!bestFrom) break;
-        tEdges.get(bestFrom).push({ to: bestTo, cost: bestGap, type: 'gap' });
-        tEdges.get(bestTo).push({ to: bestFrom, cost: bestGap, type: 'gap' });
+        const bridgeCost = bestGap * 100;
+        tEdges.get(bestFrom).push({ to: bestTo, cost: bridgeCost, type: 'gap', realDist: bestGap });
+        tEdges.get(bestTo).push({ to: bestFrom, cost: bridgeCost, type: 'gap', realDist: bestGap });
         comps = getComponents();
     }
 
@@ -5499,7 +5510,7 @@ function calcCrossSegmentDistance(a, b) {
         } else if (edge.type === 'gap') {
             const fromCoord = tNodes.get(fromId).coord;
             const toCoord = tNodes.get(toId).coord;
-            const gapDist = haversineDistance(fromCoord[0], fromCoord[1], toCoord[0], toCoord[1]);
+            const gapDist = edge.realDist || haversineDistance(fromCoord[0], fromCoord[1], toCoord[0], toCoord[1]);
             pathCoords.push(fromCoord, toCoord);
             totalDist += gapDist;
         }
