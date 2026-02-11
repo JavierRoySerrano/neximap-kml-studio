@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<!-- NexiMap KML Studio v2.8.4 - Better debug + ensure A and B layers in graph + larger K -->
+<!-- NexiMap KML Studio v2.8.5 - Bidirectional K-NN edges for fully connected graph -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NexiMap KML Studio v2.8.4</title>
+<title>NexiMap KML Studio v2.8.5</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='2' width='28' height='28' rx='4' fill='%230096D6'/%3E%3Cpath d='M8 12L16 8L24 12L16 16Z' fill='white' opacity='0.9'/%3E%3Cpath d='M8 16L16 20L24 16' stroke='white' stroke-width='1.5' fill='none'/%3E%3Cpath d='M8 20L16 24L24 20' stroke='white' stroke-width='1.5' fill='none'/%3E%3C/svg%3E"/>
 <style>
 :root {
@@ -958,7 +958,7 @@ header {
     <div class="app-logo">
         <svg width="20" height="20" viewBox="0 0 32 32"><rect x="2" y="2" width="28" height="28" rx="4" fill="#0096D6"/><path d="M8 12L16 8L24 12L16 16Z" fill="white" opacity="0.9"/><path d="M8 16L16 20L24 16" stroke="white" stroke-width="1.5" fill="none"/><path d="M8 20L16 24L24 20" stroke="white" stroke-width="1.5" fill="none"/></svg>
         NexiMap KML Studio
-        <span class="ver">v2.8.4</span>
+        <span class="ver">v2.8.5</span>
     </div>
 
     <!-- File Menu -->
@@ -4922,6 +4922,7 @@ function calcCrossSegmentDistance(a, b) {
     allLines.forEach(l => epMap.set(l.id, segEndpoints(l)));
 
     // For each segment endpoint, find K nearest other segment endpoints
+    // Add BIDIRECTIONAL edges to ensure graph connectivity
     const adj = new Map();
     allLines.forEach(l => adj.set(l.id, []));
 
@@ -4931,7 +4932,6 @@ function calcCrossSegmentDistance(a, b) {
 
         for (const myEnd of ['start', 'end']) {
             const myPt = myEnd === 'start' ? epI.start : epI.end;
-            // Compute distance to all other segment endpoints
             const candidates = [];
             for (let j = 0; j < allLines.length; j++) {
                 if (j === i) continue;
@@ -4945,11 +4945,13 @@ function calcCrossSegmentDistance(a, b) {
                     candidates.push({ neighborId: idJ, theirEnd: 'end', gap: dE });
                 }
             }
-            // Keep only K nearest
             candidates.sort((a, b) => a.gap - b.gap);
             const topK = candidates.slice(0, K_NEIGHBORS);
             for (const c of topK) {
+                // Forward edge: I -> neighbor
                 adj.get(idI).push({ neighborId: c.neighborId, myEnd, theirEnd: c.theirEnd, gap: c.gap });
+                // Reverse edge: neighbor -> I (ensures bidirectional connectivity)
+                adj.get(c.neighborId).push({ neighborId: idI, myEnd: c.theirEnd, theirEnd: myEnd, gap: c.gap });
             }
         }
     }
