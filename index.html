@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<!-- NexiMap KML Studio v2.7 - Cross-segment measurement: measure across multiple connected segments -->
+<!-- NexiMap KML Studio v2.7.1 - Fixed cross-segment path tracing with proper orientation detection -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NexiMap KML Studio v2.7</title>
+<title>NexiMap KML Studio v2.7.1</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='2' width='28' height='28' rx='4' fill='%230096D6'/%3E%3Cpath d='M8 12L16 8L24 12L16 16Z' fill='white' opacity='0.9'/%3E%3Cpath d='M8 16L16 20L24 16' stroke='white' stroke-width='1.5' fill='none'/%3E%3Cpath d='M8 20L16 24L24 20' stroke='white' stroke-width='1.5' fill='none'/%3E%3C/svg%3E"/>
 <style>
 :root {
@@ -958,7 +958,7 @@ header {
     <div class="app-logo">
         <svg width="20" height="20" viewBox="0 0 32 32"><rect x="2" y="2" width="28" height="28" rx="4" fill="#0096D6"/><path d="M8 12L16 8L24 12L16 16Z" fill="white" opacity="0.9"/><path d="M8 16L16 20L24 16" stroke="white" stroke-width="1.5" fill="none"/><path d="M8 20L16 24L24 20" stroke="white" stroke-width="1.5" fill="none"/></svg>
         NexiMap KML Studio
-        <span class="ver">v2.7</span>
+        <span class="ver">v2.7.1</span>
     </div>
 
     <!-- File Menu -->
@@ -4877,104 +4877,114 @@ function calcCrossSegmentDistance(a, b) {
         return { distance: dist, pathCoords: layerA.coords.slice(startI, endI + 1), segments: 1 };
     }
 
-    // DIFFERENT LAYERS: find common parent folder, get ordered layers, trace path
+    // DIFFERENT LAYERS: build a continuous oriented chain from all segments
     const folderA = layerA.folderId, folderB = layerB.folderId;
-
-    // Collect all line layers in folder order (recursive) starting from common ancestor
     const commonFolder = findCommonAncestorFolder(folderA, folderB);
     if (!commonFolder) {
-        // No common folder — just straight-line distance between the two points
         const dist = haversineDistance(a.coord[0], a.coord[1], b.coord[0], b.coord[1]);
         return { distance: dist, pathCoords: [a.coord, b.coord], segments: 0 };
     }
 
-    // Get ordered list of all line layers in this folder tree
-    const orderedLayers = getOrderedLineLayers(commonFolder);
-
-    // Find positions of our two layers in the ordered list
-    let idxA = orderedLayers.findIndex(l => l.id === a.layerId);
-    let idxB = orderedLayers.findIndex(l => l.id === b.layerId);
-    if (idxA === -1 || idxB === -1) {
+    // Step 1: Get all line layers, orient them into a continuous chain
+    const allLayers = getOrderedLineLayers(commonFolder);
+    if (allLayers.length < 2) {
         const dist = haversineDistance(a.coord[0], a.coord[1], b.coord[0], b.coord[1]);
         return { distance: dist, pathCoords: [a.coord, b.coord], segments: 0 };
     }
 
-    // Ensure A comes before B in the list
-    let vertA = a.vertexIdx, vertB = b.vertexIdx;
-    if (idxA > idxB) {
-        [idxA, idxB] = [idxB, idxA];
-        [vertA, vertB] = [b.vertexIdx, a.vertexIdx];
+    // Step 2: Build oriented chain — for each segment, determine if it needs reversing
+    // to form a continuous path. Use greedy endpoint matching.
+    const oriented = []; // each entry: { layerId, coords: [...] } with coords in correct direction
+    oriented.push({ layerId: allLayers[0].id, coords: allLayers[0].coords.slice() });
+
+    for (let i = 1; i < allLayers.length; i++) {
+        const prev = oriented[oriented.length - 1];
+        const prevEnd = prev.coords[prev.coords.length - 1];
+        const cur = allLayers[i].coords;
+        if (cur.length < 1) continue;
+
+        const curStart = cur[0];
+        const curEnd = cur[cur.length - 1];
+
+        // Check which end of current segment is closer to end of previous segment
+        const dStartToStart = haversineDistance(prevEnd[0], prevEnd[1], curStart[0], curStart[1]);
+        const dStartToEnd = haversineDistance(prevEnd[0], prevEnd[1], curEnd[0], curEnd[1]);
+
+        if (dStartToEnd < dStartToStart) {
+            // Current segment is reversed — its end is closer to prev end
+            oriented.push({ layerId: allLayers[i].id, coords: cur.slice().reverse() });
+        } else {
+            oriented.push({ layerId: allLayers[i].id, coords: cur.slice() });
+        }
     }
 
-    // Determine direction: check if segments connect start-to-end or end-to-start
-    // Build the path by figuring out the orientation of each segment
-    let totalDist = 0;
+    // Step 3: Also check if the ENTIRE chain needs reversing
+    // (first segment might itself be backwards relative to point A)
+    // Build a flat coordinate chain to locate A and B
+    let chainA = null, chainB = null;
+    let globalIdx = 0;
+    const chainInfo = []; // [{layerId, startGlobal, endGlobal, origVertexMap}]
+
+    for (const seg of oriented) {
+        const start = globalIdx;
+        chainInfo.push({ layerId: seg.layerId, startGlobal: start, coordCount: seg.coords.length });
+        globalIdx += seg.coords.length;
+    }
+
+    // Find where A and B sit in the oriented chain
+    function findInChain(layerId, origVertexIdx) {
+        const layer = projectData.layers[layerId];
+        const targetCoord = layer.coords[origVertexIdx];
+        // Search through oriented segments for this layer
+        for (const seg of oriented) {
+            if (seg.layerId !== layerId) continue;
+            // Find the coord in the oriented (possibly reversed) array
+            for (let ci = 0; ci < seg.coords.length; ci++) {
+                if (Math.abs(seg.coords[ci][0] - targetCoord[0]) < 1e-9 &&
+                    Math.abs(seg.coords[ci][1] - targetCoord[1]) < 1e-9) {
+                    return { segIdx: oriented.indexOf(seg), localIdx: ci };
+                }
+            }
+        }
+        return null;
+    }
+
+    const posA = findInChain(a.layerId, a.vertexIdx);
+    const posB = findInChain(b.layerId, b.vertexIdx);
+
+    if (!posA || !posB) {
+        const dist = haversineDistance(a.coord[0], a.coord[1], b.coord[0], b.coord[1]);
+        return { distance: dist, pathCoords: [a.coord, b.coord], segments: 0 };
+    }
+
+    // Ensure posA comes before posB in the chain
+    let pA = posA, pB = posB;
+    let swapped = false;
+    if (pA.segIdx > pB.segIdx || (pA.segIdx === pB.segIdx && pA.localIdx > pB.localIdx)) {
+        [pA, pB] = [pB, pA];
+        swapped = true;
+    }
+
+    // Step 4: Extract coordinates from pA to pB
     let pathCoords = [];
+    let totalDist = 0;
     let segCount = 0;
 
-    for (let si = idxA; si <= idxB; si++) {
-        const layer = orderedLayers[si];
-        const coords = layer.coords;
-        if (coords.length < 1) continue;
+    for (let si = pA.segIdx; si <= pB.segIdx; si++) {
+        const seg = oriented[si];
+        let fromV = 0, toV = seg.coords.length - 1;
 
-        let startV, endV;
-        if (si === idxA && si === idxB) {
-            // Same layer
-            startV = Math.min(vertA, vertB);
-            endV = Math.max(vertA, vertB);
-        } else if (si === idxA) {
-            // First segment: from clicked vertex to the end that connects to next segment
-            const nextLayer = orderedLayers[si + 1];
-            if (nextLayer && nextLayer.coords.length > 0) {
-                const distToFirst = haversineDistance(coords[coords.length-1][0], coords[coords.length-1][1], nextLayer.coords[0][0], nextLayer.coords[0][1]);
-                const distToLast = haversineDistance(coords[coords.length-1][0], coords[coords.length-1][1], nextLayer.coords[nextLayer.coords.length-1][0], nextLayer.coords[nextLayer.coords.length-1][1]);
-                if (distToFirst <= distToLast) {
-                    // This layer's end connects to next layer's start — forward direction
-                    startV = vertA;
-                    endV = coords.length - 1;
-                } else {
-                    // This layer's start connects to next layer's end — still go from vertex to end
-                    startV = 0;
-                    endV = vertA;
-                }
-            } else {
-                startV = vertA; endV = coords.length - 1;
-            }
-        } else if (si === idxB) {
-            // Last segment: from start to clicked vertex
-            const prevLayer = orderedLayers[si - 1];
-            if (prevLayer && prevLayer.coords.length > 0) {
-                const distFromFirst = haversineDistance(coords[0][0], coords[0][1], prevLayer.coords[prevLayer.coords.length-1][0], prevLayer.coords[prevLayer.coords.length-1][1]);
-                const distFromLast = haversineDistance(coords[coords.length-1][0], coords[coords.length-1][1], prevLayer.coords[prevLayer.coords.length-1][0], prevLayer.coords[prevLayer.coords.length-1][1]);
-                if (distFromFirst <= distFromLast) {
-                    startV = 0; endV = vertB;
-                } else {
-                    startV = vertB; endV = coords.length - 1;
-                }
-            } else {
-                startV = 0; endV = vertB;
-            }
-        } else {
-            // Middle segment: use entire segment
-            startV = 0; endV = coords.length - 1;
-        }
+        if (si === pA.segIdx) fromV = pA.localIdx;
+        if (si === pB.segIdx) toV = pB.localIdx;
 
-        const sI = Math.min(startV, endV), eI = Math.max(startV, endV);
-        const sliceCoords = coords.slice(sI, eI + 1);
-
-        // Check if we need to reverse based on connectivity
-        if (pathCoords.length > 0 && sliceCoords.length > 0) {
-            const lastPt = pathCoords[pathCoords.length - 1];
-            const dToStart = haversineDistance(lastPt[0], lastPt[1], sliceCoords[0][0], sliceCoords[0][1]);
-            const dToEnd = haversineDistance(lastPt[0], lastPt[1], sliceCoords[sliceCoords.length-1][0], sliceCoords[sliceCoords.length-1][1]);
-            if (dToEnd < dToStart) sliceCoords.reverse();
-        }
-
-        for (let i = 0; i < sliceCoords.length - 1; i++) {
-            totalDist += haversineDistance(sliceCoords[i][0], sliceCoords[i][1], sliceCoords[i+1][0], sliceCoords[i+1][1]);
-        }
-        pathCoords = pathCoords.concat(sliceCoords);
+        const slice = seg.coords.slice(fromV, toV + 1);
+        pathCoords = pathCoords.concat(slice);
         segCount++;
+    }
+
+    // Calculate distance along the path
+    for (let i = 0; i < pathCoords.length - 1; i++) {
+        totalDist += haversineDistance(pathCoords[i][0], pathCoords[i][1], pathCoords[i+1][0], pathCoords[i+1][1]);
     }
 
     return { distance: totalDist, pathCoords, segments: segCount };
