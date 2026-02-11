@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<!-- NexiMap KML Studio v2.7.4 - Highlight used segments on map during measurement -->
+<!-- NexiMap KML Studio v2.7.5 - Glow effect on measured segments + dimming non-used -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NexiMap KML Studio v2.7.4</title>
+<title>NexiMap KML Studio v2.7.5</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='2' width='28' height='28' rx='4' fill='%230096D6'/%3E%3Cpath d='M8 12L16 8L24 12L16 16Z' fill='white' opacity='0.9'/%3E%3Cpath d='M8 16L16 20L24 16' stroke='white' stroke-width='1.5' fill='none'/%3E%3Cpath d='M8 20L16 24L24 20' stroke='white' stroke-width='1.5' fill='none'/%3E%3C/svg%3E"/>
 <style>
 :root {
@@ -958,7 +958,7 @@ header {
     <div class="app-logo">
         <svg width="20" height="20" viewBox="0 0 32 32"><rect x="2" y="2" width="28" height="28" rx="4" fill="#0096D6"/><path d="M8 12L16 8L24 12L16 16Z" fill="white" opacity="0.9"/><path d="M8 16L16 20L24 16" stroke="white" stroke-width="1.5" fill="none"/><path d="M8 20L16 24L24 20" stroke="white" stroke-width="1.5" fill="none"/></svg>
         NexiMap KML Studio
-        <span class="ver">v2.7.4</span>
+        <span class="ver">v2.7.5</span>
     </div>
 
     <!-- File Menu -->
@@ -5113,6 +5113,7 @@ window.ctxMeasureAB = function() {
 };
 
 let measureDimmedLayers = []; // [{layerId, origOpacity}]
+let measureGlowLayers = []; // Leaflet polyline layers for glow effect
 
 function clearMeasureMarkers() {
     measureMarkers.forEach(m => map.removeLayer(m));
@@ -5122,14 +5123,28 @@ function clearMeasureMarkers() {
 }
 
 function dimNonMeasuredLayers(usedIds) {
-    restoreMeasuredLayers(); // clear any previous dimming
+    restoreMeasuredLayers(); // clear any previous
     const usedSet = new Set(usedIds);
     Object.values(projectData.layers).forEach(layer => {
         if (!layer.visible || layer.type !== 'line' || !layer.leafletLayer) return;
         if (!usedSet.has(layer.id)) {
             // Dim non-used layers
             measureDimmedLayers.push({ layerId: layer.id, origOpacity: layer.opacity || 1 });
-            layer.leafletLayer.setStyle({ opacity: 0.12 });
+            layer.leafletLayer.setStyle({ opacity: 0.08 });
+        } else {
+            // Add glow effect behind used layers: wide semi-transparent bright halo
+            const glowOuter = L.polyline(layer.coords, {
+                color: '#00e5ff', weight: (layer.width || 2.5) + 10,
+                opacity: 0.25, lineCap: 'round', lineJoin: 'round', interactive: false
+            }).addTo(map);
+            const glowInner = L.polyline(layer.coords, {
+                color: '#ffffff', weight: (layer.width || 2.5) + 5,
+                opacity: 0.35, lineCap: 'round', lineJoin: 'round', interactive: false
+            }).addTo(map);
+            // Ensure glow is below the actual line
+            glowOuter.bringToBack();
+            glowInner.bringToBack();
+            measureGlowLayers.push(glowOuter, glowInner);
         }
     });
 }
@@ -5142,6 +5157,8 @@ function restoreMeasuredLayers() {
         }
     });
     measureDimmedLayers = [];
+    measureGlowLayers.forEach(gl => map.removeLayer(gl));
+    measureGlowLayers = [];
 }
 
 // Keep the old haversine-based function as fallback
