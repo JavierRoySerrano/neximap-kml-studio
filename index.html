@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<!-- NexiMap KML Studio v2.9.3 - Fixed drag offset for distance panel -->
+<!-- NexiMap KML Studio v2.9.4 - Topology diagram viewer for segment connectivity -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NexiMap KML Studio v2.9.3</title>
+<title>NexiMap KML Studio v2.9.4</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='2' width='28' height='28' rx='4' fill='%230096D6'/%3E%3Cpath d='M8 12L16 8L24 12L16 16Z' fill='white' opacity='0.9'/%3E%3Cpath d='M8 16L16 20L24 16' stroke='white' stroke-width='1.5' fill='none'/%3E%3Cpath d='M8 20L16 24L24 20' stroke='white' stroke-width='1.5' fill='none'/%3E%3C/svg%3E"/>
 <style>
 :root {
@@ -891,6 +891,38 @@ header {
 .dist-row .dist-value.green { color: var(--success); }
 .dist-row .dist-value.blue { color: var(--accent); }
 
+/* Topology diagram modal */
+#topoModal {
+    display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    z-index: 2000; background: rgba(0,0,0,0.6); align-items: center; justify-content: center;
+}
+#topoModal.show { display: flex; }
+#topoModalInner {
+    background: white; border-radius: 10px; box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    width: 90vw; height: 85vh; display: flex; flex-direction: column; overflow: hidden;
+}
+.topo-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 16px; background: var(--bg-header); border-bottom: 1px solid var(--border);
+}
+.topo-header h3 { margin: 0; font-size: 14px; color: var(--text); }
+.topo-header-btns { display: flex; gap: 8px; align-items: center; }
+.topo-header-btns button { background: none; border: 1px solid var(--border); border-radius: 4px; cursor: pointer; padding: 3px 8px; font-size: 11px; color: var(--text-secondary); }
+.topo-header-btns button:hover { background: var(--bg-hover); }
+.topo-body { flex: 1; position: relative; overflow: hidden; background: #f0f2f5; }
+#topoCanvas { width: 100%; height: 100%; display: block; }
+.topo-legend {
+    position: absolute; bottom: 10px; left: 10px; background: rgba(255,255,255,0.92);
+    border-radius: 6px; padding: 8px 12px; font-size: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+.topo-legend-item { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
+.topo-legend-line { width: 24px; height: 3px; border-radius: 2px; }
+.topo-info {
+    position: absolute; top: 10px; right: 10px; background: rgba(255,255,255,0.92);
+    border-radius: 6px; padding: 8px 12px; font-size: 11px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    max-width: 250px;
+}
+
 /* Measurement A/B end markers */
 .measure-marker-a {
     width: 14px; height: 14px; background: var(--success); border: 2px solid white;
@@ -972,7 +1004,7 @@ header {
     <div class="app-logo">
         <svg width="20" height="20" viewBox="0 0 32 32"><rect x="2" y="2" width="28" height="28" rx="4" fill="#0096D6"/><path d="M8 12L16 8L24 12L16 16Z" fill="white" opacity="0.9"/><path d="M8 16L16 20L24 16" stroke="white" stroke-width="1.5" fill="none"/><path d="M8 20L16 24L24 20" stroke="white" stroke-width="1.5" fill="none"/></svg>
         NexiMap KML Studio
-        <span class="ver">v2.9.3</span>
+        <span class="ver">v2.9.4</span>
     </div>
 
     <!-- File Menu -->
@@ -1022,6 +1054,9 @@ header {
     </button>
     <button class="tool-btn" id="btnToggleProps" onclick="togglePropertiesPanel()" title="Toggle properties panel">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></svg>
+    </button>
+    <button class="tool-btn" id="btnTopology" onclick="showTopologyDiagram()" title="Show topology diagram of segment connectivity">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5" cy="6" r="2.5"/><circle cx="19" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M7.5 6h9M6.5 8l4 8M17.5 8l-4 8"/></svg>
     </button>
 
     <div class="spacer"></div>
@@ -1132,6 +1167,31 @@ header {
                 </div>
             </div>
             <div id="distanceContent"></div>
+        </div>
+    </div>
+
+
+    <!-- TOPOLOGY MODAL -->
+    <div id="topoModal">
+        <div id="topoModalInner">
+            <div class="topo-header">
+                <h3>🔗 Topology Diagram — Segment Connectivity</h3>
+                <div class="topo-header-btns">
+                    <button onclick="topoZoomIn()">Zoom +</button>
+                    <button onclick="topoZoomOut()">Zoom −</button>
+                    <button onclick="topoResetView()">Reset</button>
+                    <button onclick="closeTopologyDiagram()" style="color:var(--danger);font-weight:600;">✕ Close</button>
+                </div>
+            </div>
+            <div class="topo-body">
+                <canvas id="topoCanvas"></canvas>
+                <div class="topo-legend">
+                    <div class="topo-legend-item"><div class="topo-legend-line" style="background:#0096D6;"></div><span>Cable segment (internal)</span></div>
+                    <div class="topo-legend-item"><div class="topo-legend-line" style="background:#ccc;border:1px dashed #999;height:1px;"></div><span>Gap connection</span></div>
+                    <div class="topo-legend-item"><svg width="12" height="12"><circle cx="6" cy="6" r="5" fill="#0096D6" stroke="white" stroke-width="1.5"/></svg><span>Endpoint node</span></div>
+                </div>
+                <div class="topo-info" id="topoInfo">Hover over a node or edge for details</div>
+            </div>
         </div>
     </div>
 
@@ -4854,6 +4914,259 @@ window.toggleDistMinimize = function() {
     });
     document.addEventListener('mouseup', function() { dragging = false; dragEl = null; });
 })();
+
+// ═══════════════════════════════════════════════════════════
+// TOPOLOGY DIAGRAM
+// ═══════════════════════════════════════════════════════════
+let topoState = { nodes: [], edges: [], zoom: 1, panX: 0, panY: 0, dragging: null, hovered: null };
+
+window.showTopologyDiagram = function() {
+    const allLines = Object.values(projectData.layers).filter(l => l.visible && l.type === 'line' && l.coords.length >= 2);
+    if (allLines.length < 1) { toast('No visible line layers to diagram', 'error'); return; }
+
+    // Build topology nodes and edges
+    const tNodes = []; // {id, label, x, y, geoLat, geoLng, color, layerId}
+    const tEdges = []; // {from, to, type:'internal'|'gap', dist, color, label}
+    const nodeMap = new Map(); // layerId:s/e -> index
+
+    // Create nodes from layer endpoints
+    allLines.forEach(layer => {
+        const sCoord = layer.coords[0];
+        const eCoord = layer.coords[layer.coords.length - 1];
+        const sId = layer.id + ':s';
+        const eId = layer.id + ':e';
+        const color = layer.color || '#0055ff';
+
+        nodeMap.set(sId, tNodes.length);
+        tNodes.push({ id: sId, label: layer.name + ' [S]', x: 0, y: 0, geoLng: sCoord[1], geoLat: sCoord[0], color, layerId: layer.id });
+
+        nodeMap.set(eId, tNodes.length);
+        tNodes.push({ id: eId, label: layer.name + ' [E]', x: 0, y: 0, geoLng: eCoord[1], geoLat: eCoord[0], color, layerId: layer.id });
+
+        // Internal edge
+        let iDist = 0;
+        for (let i = 0; i < layer.coords.length - 1; i++) {
+            iDist += haversineDistance(layer.coords[i][0], layer.coords[i][1], layer.coords[i+1][0], layer.coords[i+1][1]);
+        }
+        tEdges.push({ from: nodeMap.get(sId), to: nodeMap.get(eId), type: 'internal', dist: iDist, color, label: layer.name });
+    });
+
+    // Gap edges — nearest neighbor per endpoint
+    for (let i = 0; i < tNodes.length; i++) {
+        let bestJ = -1, bestDist = Infinity;
+        for (let j = 0; j < tNodes.length; j++) {
+            if (tNodes[j].layerId === tNodes[i].layerId) continue;
+            const d = haversineDistance(tNodes[i].geoLat, tNodes[i].geoLng, tNodes[j].geoLat, tNodes[j].geoLng);
+            if (d < bestDist) { bestDist = d; bestJ = j; }
+        }
+        if (bestJ >= 0) {
+            // Avoid duplicate gap edges
+            const exists = tEdges.some(e => e.type === 'gap' && ((e.from === i && e.to === bestJ) || (e.from === bestJ && e.to === i)));
+            if (!exists) {
+                tEdges.push({ from: i, to: bestJ, type: 'gap', dist: bestDist, color: '#aaa', label: 'gap ' + bestDist.toFixed(1) + 'km' });
+            }
+        }
+    }
+
+    // Position nodes using geographic coordinates projected to screen
+    const lngs = tNodes.map(n => n.geoLng);
+    const lats = tNodes.map(n => n.geoLat);
+    const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
+    const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+    const lngRange = maxLng - minLng || 1;
+    const latRange = maxLat - minLat || 1;
+
+    const canvas = document.getElementById('topoCanvas');
+    const rect = canvas.parentElement.getBoundingClientRect();
+    canvas.width = rect.width * window.devicePixelRatio;
+    canvas.height = rect.height * window.devicePixelRatio;
+    canvas.style.width = rect.width + 'px';
+    canvas.style.height = rect.height + 'px';
+
+    const padding = 80;
+    const w = rect.width - padding * 2;
+    const h = rect.height - padding * 2;
+
+    tNodes.forEach(n => {
+        n.x = padding + ((n.geoLng - minLng) / lngRange) * w;
+        n.y = padding + ((maxLat - n.geoLat) / latRange) * h; // flip Y for geo
+    });
+
+    topoState = { nodes: tNodes, edges: tEdges, zoom: 1, panX: 0, panY: 0, dragging: null, hovered: null, canvasW: rect.width, canvasH: rect.height };
+
+    document.getElementById('topoModal').classList.add('show');
+    renderTopology();
+    setupTopoInteraction();
+};
+
+function renderTopology() {
+    const canvas = document.getElementById('topoCanvas');
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio;
+    const { nodes, edges, zoom, panX, panY, hovered } = topoState;
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr);
+
+    ctx.save();
+    ctx.translate(panX, panY);
+    ctx.scale(zoom, zoom);
+
+    // Draw edges
+    edges.forEach((e, idx) => {
+        const from = nodes[e.from], to = nodes[e.to];
+        ctx.beginPath();
+        ctx.moveTo(from.x, from.y);
+        ctx.lineTo(to.x, to.y);
+
+        if (e.type === 'gap') {
+            ctx.strokeStyle = hovered && hovered.type === 'edge' && hovered.idx === idx ? '#f59e0b' : '#ccc';
+            ctx.lineWidth = hovered && hovered.type === 'edge' && hovered.idx === idx ? 2 : 1;
+            ctx.setLineDash([4, 4]);
+        } else {
+            ctx.strokeStyle = hovered && hovered.type === 'edge' && hovered.idx === idx ? '#f59e0b' : e.color;
+            ctx.lineWidth = hovered && hovered.type === 'edge' && hovered.idx === idx ? 3.5 : 2;
+            ctx.setLineDash([]);
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Distance label on internal edges
+        if (e.type === 'internal' && zoom > 0.7) {
+            const mx = (from.x + to.x) / 2, my = (from.y + to.y) / 2;
+            const distLabel = e.dist < 1 ? (e.dist * 1000).toFixed(0) + 'm' : e.dist.toFixed(1) + 'km';
+            ctx.font = '9px sans-serif';
+            ctx.fillStyle = 'rgba(0,0,0,0.5)';
+            ctx.textAlign = 'center';
+            ctx.fillText(distLabel, mx, my - 4);
+        }
+    });
+
+    // Draw nodes
+    const nodeRadius = Math.max(3, 5 / Math.sqrt(zoom));
+    nodes.forEach((n, idx) => {
+        const isHovered = hovered && hovered.type === 'node' && hovered.idx === idx;
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, isHovered ? nodeRadius + 3 : nodeRadius, 0, Math.PI * 2);
+        ctx.fillStyle = isHovered ? '#f59e0b' : n.color;
+        ctx.fill();
+        ctx.strokeStyle = 'white';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        // Label on hover or if zoomed in
+        if (isHovered || zoom > 2) {
+            ctx.font = (isHovered ? 'bold ' : '') + '10px sans-serif';
+            ctx.fillStyle = '#333';
+            ctx.textAlign = 'left';
+            ctx.fillText(n.label, n.x + nodeRadius + 4, n.y + 3);
+        }
+    });
+
+    ctx.restore();
+}
+
+function setupTopoInteraction() {
+    const canvas = document.getElementById('topoCanvas');
+    let isPanning = false, lastX = 0, lastY = 0;
+
+    canvas.onmousedown = function(e) {
+        isPanning = true;
+        lastX = e.clientX; lastY = e.clientY;
+        canvas.style.cursor = 'grabbing';
+    };
+    canvas.onmousemove = function(e) {
+        if (isPanning) {
+            topoState.panX += e.clientX - lastX;
+            topoState.panY += e.clientY - lastY;
+            lastX = e.clientX; lastY = e.clientY;
+            renderTopology();
+            return;
+        }
+        // Hit testing for hover
+        const rect = canvas.getBoundingClientRect();
+        const mx = (e.clientX - rect.left - topoState.panX) / topoState.zoom;
+        const my = (e.clientY - rect.top - topoState.panY) / topoState.zoom;
+        let found = null;
+
+        // Check nodes
+        topoState.nodes.forEach((n, idx) => {
+            const dx = n.x - mx, dy = n.y - my;
+            if (dx * dx + dy * dy < 100) found = { type: 'node', idx };
+        });
+
+        // Check edges if no node hit
+        if (!found) {
+            topoState.edges.forEach((e, idx) => {
+                const from = topoState.nodes[e.from], to = topoState.nodes[e.to];
+                // Point-to-line distance
+                const dx = to.x - from.x, dy = to.y - from.y;
+                const len2 = dx * dx + dy * dy;
+                if (len2 === 0) return;
+                let t = ((mx - from.x) * dx + (my - from.y) * dy) / len2;
+                t = Math.max(0, Math.min(1, t));
+                const px = from.x + t * dx, py = from.y + t * dy;
+                const d2 = (mx - px) * (mx - px) + (my - py) * (my - py);
+                if (d2 < 30) found = { type: 'edge', idx };
+            });
+        }
+
+        if (JSON.stringify(found) !== JSON.stringify(topoState.hovered)) {
+            topoState.hovered = found;
+            renderTopology();
+            // Update info panel
+            const info = document.getElementById('topoInfo');
+            if (found && found.type === 'node') {
+                const n = topoState.nodes[found.idx];
+                info.innerHTML = '<b>' + n.label + '</b><br>Lat: ' + n.geoLat.toFixed(4) + '<br>Lng: ' + n.geoLng.toFixed(4);
+            } else if (found && found.type === 'edge') {
+                const e = topoState.edges[found.idx];
+                const distStr = e.dist < 1 ? (e.dist * 1000).toFixed(0) + ' m' : e.dist.toFixed(2) + ' km';
+                info.innerHTML = '<b>' + e.label + '</b><br>Type: ' + e.type + '<br>Distance: ' + distStr;
+            } else {
+                info.innerHTML = 'Hover over a node or edge for details';
+            }
+        }
+        canvas.style.cursor = found ? 'pointer' : 'grab';
+    };
+    canvas.onmouseup = function() { isPanning = false; canvas.style.cursor = 'grab'; };
+    canvas.onmouseleave = function() { isPanning = false; canvas.style.cursor = 'grab'; };
+    canvas.onwheel = function(e) {
+        e.preventDefault();
+        const rect = canvas.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+        const oldZoom = topoState.zoom;
+        const factor = e.deltaY < 0 ? 1.15 : 0.87;
+        topoState.zoom = Math.max(0.1, Math.min(20, topoState.zoom * factor));
+        // Zoom toward cursor
+        topoState.panX = mx - (mx - topoState.panX) * (topoState.zoom / oldZoom);
+        topoState.panY = my - (my - topoState.panY) * (topoState.zoom / oldZoom);
+        renderTopology();
+    };
+    canvas.style.cursor = 'grab';
+}
+
+window.closeTopologyDiagram = function() {
+    document.getElementById('topoModal').classList.remove('show');
+};
+
+window.topoZoomIn = function() {
+    topoState.zoom *= 1.3;
+    topoState.panX = topoState.canvasW / 2 - (topoState.canvasW / 2 - topoState.panX) * 1.3;
+    topoState.panY = topoState.canvasH / 2 - (topoState.canvasH / 2 - topoState.panY) * 1.3;
+    renderTopology();
+};
+window.topoZoomOut = function() {
+    topoState.zoom *= 0.77;
+    topoState.panX = topoState.canvasW / 2 - (topoState.canvasW / 2 - topoState.panX) * 0.77;
+    topoState.panY = topoState.canvasH / 2 - (topoState.canvasH / 2 - topoState.panY) * 0.77;
+    renderTopology();
+};
+window.topoResetView = function() {
+    topoState.zoom = 1; topoState.panX = 0; topoState.panY = 0;
+    renderTopology();
+};
 
 window.togglePropertiesPanel = function() {
     const rp = document.getElementById('rightPanel');
