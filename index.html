@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<!-- NexiMap KML Studio v3.0.4 - Simplified topology with 5-pass reduction and island bridging -->
+<!-- NexiMap KML Studio v3.0.6 - Simplified topology with 5-pass reduction and island bridging -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NexiMap KML Studio v3.0.4</title>
+<title>NexiMap KML Studio v3.0.6</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='2' width='28' height='28' rx='4' fill='%230096D6'/%3E%3Cpath d='M8 12L16 8L24 12L16 16Z' fill='white' opacity='0.9'/%3E%3Cpath d='M8 16L16 20L24 16' stroke='white' stroke-width='1.5' fill='none'/%3E%3Cpath d='M8 20L16 24L24 20' stroke='white' stroke-width='1.5' fill='none'/%3E%3C/svg%3E"/>
 <style>
 :root {
@@ -727,6 +727,10 @@ header {
 .leaflet-container.pin-cursor { cursor: crosshair !important; }
 .leaflet-container.pin-cursor .leaflet-interactive { cursor: crosshair !important; }
 .leaflet-container.pin-cursor .leaflet-marker-icon { cursor: crosshair !important; }
+.leaflet-container.draw-cursor { cursor: crosshair !important; }
+.leaflet-container.draw-cursor .leaflet-interactive { cursor: crosshair !important; }
+.leaflet-container.addpoint-cursor { cursor: crosshair !important; }
+.leaflet-container.addpoint-cursor .leaflet-interactive { cursor: crosshair !important; }
 
 /* Draggable pin marker */
 .pin-marker.draggable-pin { cursor: grab; }
@@ -1034,7 +1038,7 @@ header {
     <div class="app-logo">
         <svg width="20" height="20" viewBox="0 0 32 32"><rect x="2" y="2" width="28" height="28" rx="4" fill="#0096D6"/><path d="M8 12L16 8L24 12L16 16Z" fill="white" opacity="0.9"/><path d="M8 16L16 20L24 16" stroke="white" stroke-width="1.5" fill="none"/><path d="M8 20L16 24L24 20" stroke="white" stroke-width="1.5" fill="none"/></svg>
         NexiMap KML Studio
-        <span class="ver">v3.0.4</span>
+        <span class="ver">v3.0.6</span>
     </div>
 
     <!-- File Menu -->
@@ -2971,11 +2975,13 @@ window.toggleEditMode = function() {
         map.doubleClickZoom.enable();
     }
     if (drawMode) {
-        drawCoords = []; if (drawPreviewLayer) { map.removeLayer(drawPreviewLayer); drawPreviewLayer = null; }
+        drawCoords = []; if (drawPreviewLayer) { map.removeLayer(drawPreviewLayer); drawPreviewLayer = null; } drawDotMarkers.forEach(m => map.removeLayer(m)); drawDotMarkers = [];
         drawMode = false; document.getElementById('btnDrawLine').classList.remove('active');
+        const lcD3 = document.querySelector('.leaflet-container'); if (lcD3) lcD3.classList.remove('draw-cursor');
     }
     if (addPointMode) {
         addPointMode = false; document.getElementById('btnAddPoint').classList.remove('active');
+        const lcA3 = document.querySelector('.leaflet-container'); if (lcA3) lcA3.classList.remove('addpoint-cursor');
     }
     editMode = !editMode;
     document.getElementById('btnEditMode').classList.toggle('active', editMode);
@@ -2990,17 +2996,24 @@ window.toggleAddPointMode = function() {
     addPointMode = !addPointMode;
     // Deactivate other modes
     if (addPointMode) {
-        if (drawMode) { drawCoords = []; if (drawPreviewLayer) { map.removeLayer(drawPreviewLayer); drawPreviewLayer = null; } drawMode = false; document.getElementById('btnDrawLine').classList.remove('active'); }
+        if (drawMode) { drawCoords = []; if (drawPreviewLayer) { map.removeLayer(drawPreviewLayer); drawPreviewLayer = null; } drawDotMarkers.forEach(m => map.removeLayer(m)); drawDotMarkers = []; drawMode = false; document.getElementById('btnDrawLine').classList.remove('active'); const lcD2 = document.querySelector('.leaflet-container'); if (lcD2) lcD2.classList.remove('draw-cursor'); }
         if (editMode) { editMode = false; document.getElementById('btnEditMode').classList.remove('active'); }
         if (measureMode) { measureMode = false; measureClicks = []; measureClickData = []; clearMeasureMarkers(); document.getElementById('btnMeasurePath').classList.remove('active'); const lcm = document.querySelector('.leaflet-container'); if (lcm) lcm.classList.remove('measure-cursor'); map.doubleClickZoom.enable(); }
     }
     document.getElementById('btnAddPoint').classList.toggle('active', addPointMode);
     document.getElementById('editBanner').classList.toggle('show', addPointMode);
     if (addPointMode) document.getElementById('editBanner').textContent = '⊕ ADD POINT MODE — Click on map to add vertices to selected line';
+    const lcAp = document.querySelector('.leaflet-container');
+    if (addPointMode) {
+        if (lcAp) lcAp.classList.add('addpoint-cursor');
+    } else {
+        if (lcAp) lcAp.classList.remove('addpoint-cursor');
+    }
     if (addPointMode && !selectedLayerId) {
         toast('Select a line layer first', 'error');
         addPointMode = false; document.getElementById('btnAddPoint').classList.remove('active');
         document.getElementById('editBanner').classList.remove('show');
+        if (lcAp) lcAp.classList.remove('addpoint-cursor');
         return;
     }
     renderVertexDots();
@@ -3011,28 +3024,33 @@ window.toggleAddPointMode = function() {
 let drawMode = false;
 let drawCoords = [];
 let drawPreviewLayer = null;
+let drawDotMarkers = [];
 
 window.toggleDrawMode = function() {
     drawMode = !drawMode;
     // Deactivate other modes
     if (drawMode) {
-        if (addPointMode) { addPointMode = false; document.getElementById('btnAddPoint').classList.remove('active'); }
+        if (addPointMode) { addPointMode = false; document.getElementById('btnAddPoint').classList.remove('active'); const lcA2 = document.querySelector('.leaflet-container'); if (lcA2) lcA2.classList.remove('addpoint-cursor'); }
         if (editMode) { editMode = false; document.getElementById('btnEditMode').classList.remove('active'); }
         if (measureMode) { measureMode = false; measureClicks = []; measureClickData = []; clearMeasureMarkers(); document.getElementById('btnMeasurePath').classList.remove('active'); const lcm = document.querySelector('.leaflet-container'); if (lcm) lcm.classList.remove('measure-cursor'); map.doubleClickZoom.enable(); }
     }
     document.getElementById('btnDrawLine').classList.toggle('active', drawMode);
+    const lc = document.querySelector('.leaflet-container');
     if (drawMode) {
         drawCoords = [];
+        if (lc) lc.classList.add('draw-cursor');
         document.getElementById('editBanner').textContent = '✏️ DRAW MODE — Click to add points, double-click or press Enter to finish, Escape to cancel';
         document.getElementById('editBanner').classList.add('show');
         toast('Click on map to draw a new line', 'info');
     } else {
+        if (lc) lc.classList.remove('draw-cursor');
         finishDraw();
     }
 };
 
 function finishDraw() {
     if (drawPreviewLayer) { map.removeLayer(drawPreviewLayer); drawPreviewLayer = null; }
+    drawDotMarkers.forEach(m => map.removeLayer(m)); drawDotMarkers = [];
     if (drawCoords.length >= 2) {
         // Create new layer
         const name = prompt('Name for new line:', 'New Line') || 'New Line';
@@ -3065,6 +3083,8 @@ function finishDraw() {
     drawCoords = [];
     drawMode = false;
     document.getElementById('btnDrawLine').classList.remove('active');
+    const lcDraw = document.querySelector('.leaflet-container');
+    if (lcDraw) lcDraw.classList.remove('draw-cursor');
     if (!editMode && !addPointMode) document.getElementById('editBanner').classList.remove('show');
     renderVertexDots();
 }
@@ -3110,7 +3130,7 @@ map.on('click', (e) => {
         if (drawCoords.length >= 2) {
             drawPreviewLayer = L.polyline(drawCoords, { color: '#ff6600', weight: 3, dashArray: '8,6' }).addTo(map);
         }
-        L.circleMarker(e.latlng, { radius: 4, color: '#ff6600', fillColor: '#fff', fillOpacity: 1, weight: 2 }).addTo(map);
+        drawDotMarkers.push(L.circleMarker(e.latlng, { radius: 4, color: '#ff6600', fillColor: '#fff', fillOpacity: 1, weight: 2 }).addTo(map));
         return;
     }
     if (!addPointMode) return;
@@ -3948,7 +3968,7 @@ document.addEventListener('keydown', (e) => {
         if (rulerMode) { deactivateRuler(); }
         else if (measureMode) { measureMode = false; measureClicks = []; measureClickData = []; clearMeasureMarkers(); document.getElementById('btnMeasurePath').classList.remove('active'); if (!editMode) document.getElementById('editBanner').classList.remove('show'); const lcm = document.querySelector('.leaflet-container'); if (lcm) lcm.classList.remove('measure-cursor'); map.doubleClickZoom.enable(); renderVertexDots(); toast('Measure cancelled', 'info'); }
         else if (pinMode) { pinMode = false; document.getElementById('btnPlacePin').classList.remove('active'); document.getElementById('editBanner').classList.remove('show'); const lc2 = document.querySelector('.leaflet-container'); if (lc2) lc2.classList.remove('pin-cursor'); map.doubleClickZoom.enable(); toast('Pin mode cancelled', 'info'); }
-        else if (drawMode) { drawCoords = []; if (drawPreviewLayer) { map.removeLayer(drawPreviewLayer); drawPreviewLayer = null; } drawMode = false; document.getElementById('btnDrawLine').classList.remove('active'); document.getElementById('editBanner').classList.remove('show'); renderVertexDots(); toast('Draw cancelled', 'info'); }
+        else if (drawMode) { drawCoords = []; if (drawPreviewLayer) { map.removeLayer(drawPreviewLayer); drawPreviewLayer = null; } drawDotMarkers.forEach(m => map.removeLayer(m)); drawDotMarkers = []; drawMode = false; document.getElementById('btnDrawLine').classList.remove('active'); document.getElementById('editBanner').classList.remove('show'); const lcD = document.querySelector('.leaflet-container'); if (lcD) lcD.classList.remove('draw-cursor'); renderVertexDots(); toast('Draw cancelled', 'info'); }
         else if (editMode) toggleEditMode();
         if (addPointMode) toggleAddPointMode();
         document.getElementById('colorPalette').classList.remove('show');
@@ -4501,7 +4521,7 @@ window.toggleRulerMode = function() {
         return;
     }
     // Deactivate other modes
-    if (drawMode) { drawCoords = []; if (drawPreviewLayer) { map.removeLayer(drawPreviewLayer); drawPreviewLayer = null; } drawMode = false; document.getElementById('btnDrawLine').classList.remove('active'); }
+    if (drawMode) { drawCoords = []; if (drawPreviewLayer) { map.removeLayer(drawPreviewLayer); drawPreviewLayer = null; } drawDotMarkers.forEach(m => map.removeLayer(m)); drawDotMarkers = []; drawMode = false; document.getElementById('btnDrawLine').classList.remove('active'); }
     if (pinMode) { pinMode = false; document.getElementById('btnPlacePin').classList.remove('active'); const lc0 = document.querySelector('.leaflet-container'); if (lc0) lc0.classList.remove('pin-cursor'); map.doubleClickZoom.enable(); }
     if (measureMode) { measureMode = false; measureClicks = []; measureClickData = []; clearMeasureMarkers(); document.getElementById('btnMeasurePath').classList.remove('active'); const lcm0 = document.querySelector('.leaflet-container'); if (lcm0) lcm0.classList.remove('measure-cursor'); map.doubleClickZoom.enable(); renderVertexDots(); }
     if (addPointMode) { addPointMode = false; document.getElementById('btnAddPoint').classList.remove('active'); }
