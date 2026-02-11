@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<!-- NexiMap KML Studio v2.8.5 - Bidirectional K-NN edges for fully connected graph -->
+<!-- NexiMap KML Studio v2.9 - Node-based topology graph with Dijkstra shortest path -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NexiMap KML Studio v2.8.5</title>
+<title>NexiMap KML Studio v2.9</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='2' width='28' height='28' rx='4' fill='%230096D6'/%3E%3Cpath d='M8 12L16 8L24 12L16 16Z' fill='white' opacity='0.9'/%3E%3Cpath d='M8 16L16 20L24 16' stroke='white' stroke-width='1.5' fill='none'/%3E%3Cpath d='M8 20L16 24L24 20' stroke='white' stroke-width='1.5' fill='none'/%3E%3C/svg%3E"/>
 <style>
 :root {
@@ -958,7 +958,7 @@ header {
     <div class="app-logo">
         <svg width="20" height="20" viewBox="0 0 32 32"><rect x="2" y="2" width="28" height="28" rx="4" fill="#0096D6"/><path d="M8 12L16 8L24 12L16 16Z" fill="white" opacity="0.9"/><path d="M8 16L16 20L24 16" stroke="white" stroke-width="1.5" fill="none"/><path d="M8 20L16 24L24 20" stroke="white" stroke-width="1.5" fill="none"/></svg>
         NexiMap KML Studio
-        <span class="ver">v2.8.5</span>
+        <span class="ver">v2.9</span>
     </div>
 
     <!-- File Menu -->
@@ -4885,239 +4885,244 @@ function handleMeasureClick(latlng, knownIdx, knownLayerId) {
     }
 }
 
-// Calculate distance across any connected visible segments (folder-agnostic)
+// Build topology graph and find shortest path using Dijkstra
+// Topology: each layer has 2 nodes (start/end endpoints) connected by internal edge.
+// Layers connect via gap edges between nearest endpoint nodes.
+// Every node must connect to at least one other layer's node — no orphans.
 function calcCrossSegmentDistance(a, b) {
     const layerA = projectData.layers[a.layerId];
     const layerB = projectData.layers[b.layerId];
-    if (!layerA || !layerB) return { distance: 0, pathCoords: [], segments: 0, usedLayerIds: [], segNames: [], segDistances: [] };
+    const emptyResult = { distance: 0, pathCoords: [], segments: 0, usedLayerIds: [], segNames: [], segDistances: [] };
+    if (!layerA || !layerB) return emptyResult;
 
     // SAME LAYER: simple case
     if (a.layerId === b.layerId) {
-        const dist = calcPathDistance(layerA.coords, a.vertexIdx, b.vertexIdx);
-        const startI = Math.min(a.vertexIdx, b.vertexIdx), endI = Math.max(a.vertexIdx, b.vertexIdx);
-        return { distance: dist, pathCoords: layerA.coords.slice(startI, endI + 1), segments: 1, usedLayerIds: [a.layerId], segNames: [layerA.name], segDistances: [dist] };
+        const d = calcPathDistance(layerA.coords, a.vertexIdx, b.vertexIdx);
+        const sI = Math.min(a.vertexIdx, b.vertexIdx), eI = Math.max(a.vertexIdx, b.vertexIdx);
+        return { distance: d, pathCoords: layerA.coords.slice(sI, eI + 1), segments: 1, usedLayerIds: [a.layerId], segNames: [layerA.name], segDistances: [d] };
     }
 
-    // DIFFERENT LAYERS: build a connected chain from A to B using all visible line layers
-    // Step 1: Collect all visible line layers as graph nodes with endpoint info
+    // ─── STEP 1: Collect all visible line layers ───
     const allLines = Object.values(projectData.layers).filter(l => l.visible && l.type === 'line' && l.coords.length >= 2);
     if (allLines.length < 2) {
-        const dist = haversineDistance(a.coord[0], a.coord[1], b.coord[0], b.coord[1]);
-        return { distance: dist, pathCoords: [a.coord, b.coord], segments: 0, usedLayerIds: [], segNames: [], segDistances: [] };
-    }
-
-    // Step 2: Build SPARSE adjacency graph — for each endpoint, find K nearest neighbors
-    // This keeps graph small (O(n*K)) instead of O(n^2) which hangs the browser
-    const K_NEIGHBORS = 6; // nearest neighbors per endpoint
-
-    function segEndpoints(layer) {
-        return {
-            start: layer.coords[0],
-            end: layer.coords[layer.coords.length - 1]
-        };
-    }
-
-    // Pre-compute all endpoints
-    const epMap = new Map();
-    allLines.forEach(l => epMap.set(l.id, segEndpoints(l)));
-
-    // For each segment endpoint, find K nearest other segment endpoints
-    // Add BIDIRECTIONAL edges to ensure graph connectivity
-    const adj = new Map();
-    allLines.forEach(l => adj.set(l.id, []));
-
-    for (let i = 0; i < allLines.length; i++) {
-        const idI = allLines[i].id;
-        const epI = epMap.get(idI);
-
-        for (const myEnd of ['start', 'end']) {
-            const myPt = myEnd === 'start' ? epI.start : epI.end;
-            const candidates = [];
-            for (let j = 0; j < allLines.length; j++) {
-                if (j === i) continue;
-                const idJ = allLines[j].id;
-                const epJ = epMap.get(idJ);
-                const dS = haversineDistance(myPt[0], myPt[1], epJ.start[0], epJ.start[1]);
-                const dE = haversineDistance(myPt[0], myPt[1], epJ.end[0], epJ.end[1]);
-                if (dS <= dE) {
-                    candidates.push({ neighborId: idJ, theirEnd: 'start', gap: dS });
-                } else {
-                    candidates.push({ neighborId: idJ, theirEnd: 'end', gap: dE });
-                }
-            }
-            candidates.sort((a, b) => a.gap - b.gap);
-            const topK = candidates.slice(0, K_NEIGHBORS);
-            for (const c of topK) {
-                // Forward edge: I -> neighbor
-                adj.get(idI).push({ neighborId: c.neighborId, myEnd, theirEnd: c.theirEnd, gap: c.gap });
-                // Reverse edge: neighbor -> I (ensures bidirectional connectivity)
-                adj.get(c.neighborId).push({ neighborId: idI, myEnd: c.theirEnd, theirEnd: myEnd, gap: c.gap });
-            }
-        }
-    }
-
-    // Ensure A and B layers are in the graph
-    const aInGraph = allLines.some(l => l.id === a.layerId);
-    const bInGraph = allLines.some(l => l.id === b.layerId);
-    console.log('Graph: ' + allLines.length + ' layers, A(' + a.layerId + ') in graph: ' + aInGraph + ', B(' + b.layerId + ') in graph: ' + bInGraph);
-    console.log('A neighbors: ' + (adj.get(a.layerId)||[]).length + ', B neighbors: ' + (adj.get(b.layerId)||[]).length);
-    if (adj.get(a.layerId)) {
-        const aNeighbors = adj.get(a.layerId).map(n => n.neighborId + '(' + n.gap.toFixed(1) + 'km)').join(', ');
-        console.log('A neighbors detail: ' + aNeighbors);
-    }
-
-    if (!aInGraph || !bInGraph) {
-        console.warn('Layer not in graph! A visible:', layerA.visible, 'B visible:', layerB.visible);
         const d = haversineDistance(a.coord[0], a.coord[1], b.coord[0], b.coord[1]);
         return { distance: d, pathCoords: [a.coord, b.coord], segments: 0, usedLayerIds: [], segNames: [], segDistances: [] };
     }
 
-    // Step 3: Dijkstra from layer A to layer B — minimize total gap distance
-    const dijkDist = new Map();
-    const prev = new Map();
-    allLines.forEach(l => dijkDist.set(l.id, Infinity));
-    dijkDist.set(a.layerId, 0);
+    // ─── STEP 2: Build node-based topology ───
+    // Node IDs: "layerId:s" (start) and "layerId:e" (end)
+    // Edges: internal (within layer, real distance) and gap (between layers, straight-line)
+    const tNodes = new Map(); // nodeId -> {layerId, end, coord, vertexIdx?}
+    const tEdges = new Map(); // nodeId -> [{to, cost, type, layerId?}]
 
-    const pq = [{ layerId: a.layerId, cost: 0 }];
+    // Create nodes and internal edges for each layer
+    for (const layer of allLines) {
+        const sId = layer.id + ':s', eId = layer.id + ':e';
+        tNodes.set(sId, { layerId: layer.id, end: 's', coord: layer.coords[0] });
+        tNodes.set(eId, { layerId: layer.id, end: 'e', coord: layer.coords[layer.coords.length - 1] });
+        tEdges.set(sId, []);
+        tEdges.set(eId, []);
+
+        // Internal edge: layer's geometric distance
+        let iDist = 0;
+        for (let i = 0; i < layer.coords.length - 1; i++) {
+            iDist += haversineDistance(layer.coords[i][0], layer.coords[i][1], layer.coords[i+1][0], layer.coords[i+1][1]);
+        }
+        tEdges.get(sId).push({ to: eId, cost: iDist, type: 'internal', layerId: layer.id });
+        tEdges.get(eId).push({ to: sId, cost: iDist, type: 'internal', layerId: layer.id });
+    }
+
+    // ─── STEP 3: Gap edges — connect each endpoint to nearest endpoint of a DIFFERENT layer ───
+    const nodeArr = Array.from(tNodes.entries());
+    for (const [nId, nInfo] of nodeArr) {
+        let bestId = null, bestDist = Infinity;
+        for (const [mId, mInfo] of nodeArr) {
+            if (mInfo.layerId === nInfo.layerId) continue;
+            const d = haversineDistance(nInfo.coord[0], nInfo.coord[1], mInfo.coord[0], mInfo.coord[1]);
+            if (d < bestDist) { bestDist = d; bestId = mId; }
+        }
+        if (bestId) {
+            if (!tEdges.get(nId).some(e => e.to === bestId && e.type === 'gap')) {
+                tEdges.get(nId).push({ to: bestId, cost: bestDist, type: 'gap' });
+            }
+            if (!tEdges.get(bestId).some(e => e.to === nId && e.type === 'gap')) {
+                tEdges.get(bestId).push({ to: nId, cost: bestDist, type: 'gap' });
+            }
+        }
+    }
+
+    // ─── STEP 4: Ensure full connectivity — bridge any disconnected components ───
+    function getComponents() {
+        const visited = new Set();
+        const comps = [];
+        for (const [nId] of tNodes) {
+            if (visited.has(nId)) continue;
+            const comp = new Set();
+            const q = [nId];
+            while (q.length > 0) {
+                const c = q.shift();
+                if (comp.has(c)) continue;
+                comp.add(c); visited.add(c);
+                for (const e of (tEdges.get(c) || [])) {
+                    if (!comp.has(e.to)) q.push(e.to);
+                }
+            }
+            comps.push(comp);
+        }
+        return comps;
+    }
+
+    let comps = getComponents();
+    let bridgeAttempts = 0;
+    while (comps.length > 1 && bridgeAttempts < 50) {
+        bridgeAttempts++;
+        let bestGap = Infinity, bestFrom = null, bestTo = null;
+        // Only check between first component and all others (greedy merge)
+        const compA = comps[0];
+        for (let ci = 1; ci < comps.length; ci++) {
+            for (const nId of compA) {
+                const nInfo = tNodes.get(nId);
+                for (const mId of comps[ci]) {
+                    const mInfo = tNodes.get(mId);
+                    const d = haversineDistance(nInfo.coord[0], nInfo.coord[1], mInfo.coord[0], mInfo.coord[1]);
+                    if (d < bestGap) { bestGap = d; bestFrom = nId; bestTo = mId; }
+                }
+            }
+        }
+        if (!bestFrom) break;
+        tEdges.get(bestFrom).push({ to: bestTo, cost: bestGap, type: 'gap' });
+        tEdges.get(bestTo).push({ to: bestFrom, cost: bestGap, type: 'gap' });
+        comps = getComponents();
+    }
+
+    // ─── STEP 5: Insert virtual nodes for A and B measurement points ───
+    function insertVNode(layerId, vertexIdx, coord) {
+        const layer = projectData.layers[layerId];
+        const sId = layerId + ':s', eId = layerId + ':e';
+        const vId = layerId + ':v' + vertexIdx;
+
+        let distFromStart = 0;
+        for (let i = 0; i < vertexIdx; i++) {
+            distFromStart += haversineDistance(layer.coords[i][0], layer.coords[i][1], layer.coords[i+1][0], layer.coords[i+1][1]);
+        }
+        let distToEnd = 0;
+        for (let i = vertexIdx; i < layer.coords.length - 1; i++) {
+            distToEnd += haversineDistance(layer.coords[i][0], layer.coords[i][1], layer.coords[i+1][0], layer.coords[i+1][1]);
+        }
+
+        tNodes.set(vId, { layerId, end: 'v', coord, vertexIdx });
+        tEdges.set(vId, [
+            { to: sId, cost: distFromStart, type: 'internal', layerId },
+            { to: eId, cost: distToEnd, type: 'internal', layerId }
+        ]);
+        tEdges.get(sId).push({ to: vId, cost: distFromStart, type: 'internal', layerId });
+        tEdges.get(eId).push({ to: vId, cost: distToEnd, type: 'internal', layerId });
+        return vId;
+    }
+
+    const vA = insertVNode(a.layerId, a.vertexIdx, a.coord);
+    const vB = insertVNode(b.layerId, b.vertexIdx, b.coord);
+
+    // ─── STEP 6: Dijkstra from vA to vB ───
+    const dMap = new Map();
+    const prev = new Map();
+    for (const [nId] of tNodes) dMap.set(nId, Infinity);
+    dMap.set(vA, 0);
+
+    const pq = [{ id: vA, cost: 0 }];
     const settled = new Set();
 
     while (pq.length > 0) {
-        let minIdx = 0;
-        for (let i = 1; i < pq.length; i++) {
-            if (pq[i].cost < pq[minIdx].cost) minIdx = i;
-        }
-        const cur = pq.splice(minIdx, 1)[0];
-        if (settled.has(cur.layerId)) continue;
-        settled.add(cur.layerId);
+        let mi = 0;
+        for (let i = 1; i < pq.length; i++) { if (pq[i].cost < pq[mi].cost) mi = i; }
+        const cur = pq.splice(mi, 1)[0];
+        if (settled.has(cur.id)) continue;
+        settled.add(cur.id);
+        if (cur.id === vB) break;
 
-        if (cur.layerId === b.layerId) break;
-
-        const neighbors = adj.get(cur.layerId) || [];
-        for (const n of neighbors) {
-            if (settled.has(n.neighborId)) continue;
-            const newCost = cur.cost + n.gap;
-            if (newCost < dijkDist.get(n.neighborId)) {
-                dijkDist.set(n.neighborId, newCost);
-                prev.set(n.neighborId, { from: cur.layerId, myEnd: n.myEnd, theirEnd: n.theirEnd });
-                pq.push({ layerId: n.neighborId, cost: newCost });
+        for (const e of (tEdges.get(cur.id) || [])) {
+            if (settled.has(e.to)) continue;
+            const nc = cur.cost + e.cost;
+            if (nc < dMap.get(e.to)) {
+                dMap.set(e.to, nc);
+                prev.set(e.to, { from: cur.id, edge: e });
+                pq.push({ id: e.to, cost: nc });
             }
         }
     }
 
-    console.log('Dijkstra settled ' + settled.size + ' nodes, reached B: ' + settled.has(b.layerId));
-
-    // Reconstruct path from A to B
-    if (!prev.has(b.layerId) && a.layerId !== b.layerId) {
-        console.warn('Dijkstra could not reach B from A! settled nodes: ' + settled.size + '/' + allLines.length);
+    if (!settled.has(vB)) {
         const d = haversineDistance(a.coord[0], a.coord[1], b.coord[0], b.coord[1]);
         return { distance: d, pathCoords: [a.coord, b.coord], segments: 0, usedLayerIds: [], segNames: [], segDistances: [] };
     }
 
-    const segPath = [];
-    const conns = [];
-    let curNode = b.layerId;
-    while (curNode !== a.layerId) {
-        segPath.unshift(curNode);
-        const p = prev.get(curNode);
-        conns.unshift({ from: p.from, myEnd: p.myEnd, theirEnd: p.theirEnd, to: curNode });
-        curNode = p.from;
+    // ─── STEP 7: Reconstruct path ───
+    const pathNodeIds = [];
+    let c = vB;
+    while (c !== vA) {
+        pathNodeIds.unshift(c);
+        const p = prev.get(c);
+        if (!p) break;
+        c = p.from;
     }
-    segPath.unshift(a.layerId);
+    pathNodeIds.unshift(vA);
 
-    const foundPath = { path: segPath, connections: conns };
-
-    // Step 4: Build oriented coordinate chain along the found path
-    // segPath and conns already built from Dijkstra reconstruction above
-
-    // Orient each segment so it flows in the correct direction
-    const oriented = []; // [{layerId, coords, forward}]
-
-    for (let si = 0; si < segPath.length; si++) {
-        const layer = projectData.layers[segPath[si]];
-        const coords = layer.coords.slice();
-
-        if (si === 0) {
-            // First segment: determine direction based on connection to next
-            if (conns.length > 0 && conns[0].from === layer.id) {
-                // myEnd tells us which end connects to next segment
-                if (conns[0].myEnd === 'start') {
-                    // Our start connects to next — so we need to reverse (we want to travel toward start)
-                    coords.reverse();
-                }
-                // If myEnd === 'end', coords are already in correct order (traveling toward end)
-            }
-            oriented.push({ layerId: layer.id, coords });
-        } else {
-            // Subsequent segments: orient based on which end connects to previous
-            const conn = conns[si - 1]; // connection from prev to this
-            if (conn.theirEnd === 'end') {
-                // Previous connects to our end — we need to reverse so we start from our end
-                coords.reverse();
-            }
-            // If theirEnd === 'start', our start is the entry point, coords already correct
-            oriented.push({ layerId: layer.id, coords });
-        }
-    }
-
-    // Step 5: Find A and B positions in the oriented chain
-    function findPosInOriented(layerId, origVertexIdx) {
-        const origCoord = projectData.layers[layerId].coords[origVertexIdx];
-        for (let si = 0; si < oriented.length; si++) {
-            if (oriented[si].layerId !== layerId) continue;
-            for (let ci = 0; ci < oriented[si].coords.length; ci++) {
-                if (Math.abs(oriented[si].coords[ci][0] - origCoord[0]) < 1e-9 &&
-                    Math.abs(oriented[si].coords[ci][1] - origCoord[1]) < 1e-9) {
-                    return { segIdx: si, localIdx: ci };
-                }
-            }
-        }
-        return null;
-    }
-
-    const posA = findPosInOriented(a.layerId, a.vertexIdx);
-    const posB = findPosInOriented(b.layerId, b.vertexIdx);
-
-    if (!posA || !posB) {
-        const dist = haversineDistance(a.coord[0], a.coord[1], b.coord[0], b.coord[1]);
-        return { distance: dist, pathCoords: [a.coord, b.coord], segments: 0, usedLayerIds: [], segNames: [], segDistances: [] };
-    }
-
-    // Ensure A comes before B
-    let pA = posA, pB = posB;
-    if (pA.segIdx > pB.segIdx || (pA.segIdx === pB.segIdx && pA.localIdx > pB.localIdx)) {
-        [pA, pB] = [pB, pA];
-    }
-
-    // Step 6: Extract path coordinates from A to B, collect used layer IDs and names
+    // Walk path, build coordinate chain
     let pathCoords = [];
-    let segCount = 0;
     const usedLayerIds = [];
     const segNames = [];
     const segDistances = [];
+    let totalDist = 0;
+    const seenLayers = new Set();
 
-    for (let si = pA.segIdx; si <= pB.segIdx; si++) {
-        const seg = oriented[si];
-        let fromV = 0, toV = seg.coords.length - 1;
-        if (si === pA.segIdx) fromV = pA.localIdx;
-        if (si === pB.segIdx) toV = pB.localIdx;
-        const slice = seg.coords.slice(fromV, toV + 1);
-        let segDist = 0;
-        for (let i = 0; i < slice.length - 1; i++) {
-            segDist += haversineDistance(slice[i][0], slice[i][1], slice[i+1][0], slice[i+1][1]);
+    for (let i = 0; i < pathNodeIds.length - 1; i++) {
+        const fromId = pathNodeIds[i];
+        const toId = pathNodeIds[i + 1];
+        const pe = prev.get(toId);
+        if (!pe) continue;
+        const edge = pe.edge;
+
+        if (edge.type === 'internal' && edge.layerId) {
+            const layer = projectData.layers[edge.layerId];
+            if (!layer) continue;
+
+            const fromInfo = tNodes.get(fromId);
+            const toInfo = tNodes.get(toId);
+
+            let fromIdx = fromInfo.end === 's' ? 0 : fromInfo.end === 'e' ? layer.coords.length - 1 : fromInfo.vertexIdx;
+            let toIdx = toInfo.end === 's' ? 0 : toInfo.end === 'e' ? layer.coords.length - 1 : toInfo.vertexIdx;
+
+            const sI = Math.min(fromIdx, toIdx), eI = Math.max(fromIdx, toIdx);
+            let slice = layer.coords.slice(sI, eI + 1);
+            if (fromIdx > toIdx) slice = slice.slice().reverse();
+
+            let segDist = 0;
+            for (let j = 0; j < slice.length - 1; j++) {
+                segDist += haversineDistance(slice[j][0], slice[j][1], slice[j+1][0], slice[j+1][1]);
+            }
+
+            pathCoords = pathCoords.concat(slice);
+            totalDist += segDist;
+
+            if (!seenLayers.has(edge.layerId)) {
+                usedLayerIds.push(edge.layerId);
+                segNames.push(layer.name);
+                segDistances.push(segDist);
+                seenLayers.add(edge.layerId);
+            } else {
+                const idx = usedLayerIds.indexOf(edge.layerId);
+                if (idx >= 0) segDistances[idx] += segDist;
+            }
+        } else if (edge.type === 'gap') {
+            const fromCoord = tNodes.get(fromId).coord;
+            const toCoord = tNodes.get(toId).coord;
+            const gapDist = haversineDistance(fromCoord[0], fromCoord[1], toCoord[0], toCoord[1]);
+            pathCoords.push(fromCoord, toCoord);
+            totalDist += gapDist;
         }
-        pathCoords = pathCoords.concat(slice);
-        usedLayerIds.push(seg.layerId);
-        const layer = projectData.layers[seg.layerId];
-        segNames.push(layer ? layer.name : '?');
-        segDistances.push(segDist);
-        segCount++;
     }
 
-    // Calculate total distance
-    let totalDist = 0;
-    for (const d of segDistances) totalDist += d;
-
-    return { distance: totalDist, pathCoords, segments: segCount, usedLayerIds, segNames, segDistances };
+    return { distance: totalDist, pathCoords, segments: usedLayerIds.length, usedLayerIds, segNames, segDistances };
 }
 
 // Get all line layers in folder order (depth-first, items order) — kept for other uses
