@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<!-- NexiMap KML Studio v2.9.6 - Fix topology canvas sizing (show modal before measuring) -->
+<!-- NexiMap KML Studio v2.9.7 - Ensure full topology connectivity with component bridging -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NexiMap KML Studio v2.9.6</title>
+<title>NexiMap KML Studio v2.9.7</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='2' width='28' height='28' rx='4' fill='%230096D6'/%3E%3Cpath d='M8 12L16 8L24 12L16 16Z' fill='white' opacity='0.9'/%3E%3Cpath d='M8 16L16 20L24 16' stroke='white' stroke-width='1.5' fill='none'/%3E%3Cpath d='M8 20L16 24L24 20' stroke='white' stroke-width='1.5' fill='none'/%3E%3C/svg%3E"/>
 <style>
 :root {
@@ -1004,7 +1004,7 @@ header {
     <div class="app-logo">
         <svg width="20" height="20" viewBox="0 0 32 32"><rect x="2" y="2" width="28" height="28" rx="4" fill="#0096D6"/><path d="M8 12L16 8L24 12L16 16Z" fill="white" opacity="0.9"/><path d="M8 16L16 20L24 16" stroke="white" stroke-width="1.5" fill="none"/><path d="M8 20L16 24L24 20" stroke="white" stroke-width="1.5" fill="none"/></svg>
         NexiMap KML Studio
-        <span class="ver">v2.9.6</span>
+        <span class="ver">v2.9.7</span>
     </div>
 
     <!-- File Menu -->
@@ -1188,6 +1188,7 @@ header {
                 <div class="topo-legend">
                     <div class="topo-legend-item"><div class="topo-legend-line" style="background:#0096D6;"></div><span>Cable segment (internal)</span></div>
                     <div class="topo-legend-item"><div class="topo-legend-line" style="background:#ccc;border:1px dashed #999;height:1px;"></div><span>Gap connection</span></div>
+                    <div class="topo-legend-item"><div class="topo-legend-line" style="background:#e67e22;border:1px dashed #c0392b;height:1px;"></div><span>Bridge (component link)</span></div>
                     <div class="topo-legend-item"><svg width="12" height="12"><circle cx="6" cy="6" r="5" fill="#0096D6" stroke="white" stroke-width="1.5"/></svg><span>Endpoint node</span></div>
                 </div>
                 <div class="topo-info" id="topoInfo">Hover over a node or edge for details</div>
@@ -4954,21 +4955,65 @@ window.showTopologyDiagram = function() {
         tEdges.push({ from: nodeMap.get(sId), to: nodeMap.get(eId), type: 'internal', dist: iDist, color, label: layer.name });
     });
 
-    // Gap edges — nearest neighbor per endpoint
+    // Gap edges — connect each endpoint to K nearest endpoints of DIFFERENT layers
+    const K_NEAREST = 3; // connect to top-K nearest neighbors for robust connectivity
     for (let i = 0; i < tNodes.length; i++) {
-        let bestJ = -1, bestDist = Infinity;
+        // Collect all distances to nodes of different layers
+        const candidates = [];
         for (let j = 0; j < tNodes.length; j++) {
             if (tNodes[j].layerId === tNodes[i].layerId) continue;
             const d = haversineDistance(tNodes[i].geoLat, tNodes[i].geoLng, tNodes[j].geoLat, tNodes[j].geoLng);
-            if (d < bestDist) { bestDist = d; bestJ = j; }
+            candidates.push({ j, d });
         }
-        if (bestJ >= 0) {
-            // Avoid duplicate gap edges
+        candidates.sort((a, b) => a.d - b.d);
+        const topK = candidates.slice(0, K_NEAREST);
+        for (const { j: bestJ, d: bestDist } of topK) {
             const exists = tEdges.some(e => e.type === 'gap' && ((e.from === i && e.to === bestJ) || (e.from === bestJ && e.to === i)));
             if (!exists) {
                 tEdges.push({ from: i, to: bestJ, type: 'gap', dist: bestDist, color: '#aaa', label: 'gap ' + bestDist.toFixed(1) + 'km' });
             }
         }
+    }
+
+    // Ensure full connectivity — bridge any disconnected components
+    function topoGetComponents() {
+        const visited = new Set();
+        const comps = [];
+        for (let i = 0; i < tNodes.length; i++) {
+            if (visited.has(i)) continue;
+            const comp = new Set();
+            const q = [i];
+            while (q.length > 0) {
+                const c = q.shift();
+                if (comp.has(c)) continue;
+                comp.add(c); visited.add(c);
+                for (const e of tEdges) {
+                    if (e.from === c && !comp.has(e.to)) q.push(e.to);
+                    if (e.to === c && !comp.has(e.from)) q.push(e.from);
+                }
+            }
+            comps.push(comp);
+        }
+        return comps;
+    }
+
+    let comps = topoGetComponents();
+    let bridgeAttempts = 0;
+    while (comps.length > 1 && bridgeAttempts < 100) {
+        bridgeAttempts++;
+        let bestGap = Infinity, bestFrom = -1, bestTo = -1;
+        const compA = comps[0];
+        for (let ci = 1; ci < comps.length; ci++) {
+            for (const nIdx of compA) {
+                for (const mIdx of comps[ci]) {
+                    const d = haversineDistance(tNodes[nIdx].geoLat, tNodes[nIdx].geoLng, tNodes[mIdx].geoLat, tNodes[mIdx].geoLng);
+                    if (d < bestGap) { bestGap = d; bestFrom = nIdx; bestTo = mIdx; }
+                }
+            }
+        }
+        if (bestFrom < 0) break;
+        tEdges.push({ from: bestFrom, to: bestTo, type: 'gap', dist: bestGap, color: '#e67e22', label: 'bridge ' + bestGap.toFixed(1) + 'km' });
+        comps = topoGetComponents();
     }
 
     // Position nodes using geographic coordinates projected to screen
@@ -5028,7 +5073,7 @@ function renderTopology() {
         ctx.lineTo(to.x, to.y);
 
         if (e.type === 'gap') {
-            ctx.strokeStyle = hovered && hovered.type === 'edge' && hovered.idx === idx ? '#f59e0b' : '#ccc';
+            ctx.strokeStyle = hovered && hovered.type === 'edge' && hovered.idx === idx ? '#f59e0b' : (e.color || '#ccc');
             ctx.lineWidth = hovered && hovered.type === 'edge' && hovered.idx === idx ? 2 : 1;
             ctx.setLineDash([4, 4]);
         } else {
@@ -5039,8 +5084,8 @@ function renderTopology() {
         ctx.stroke();
         ctx.setLineDash([]);
 
-        // Distance label on internal edges
-        if (e.type === 'internal' && zoom > 0.7) {
+        // Distance label on edges when zoomed in
+        if ((e.type === 'internal' || e.type === 'gap') && zoom > 0.7) {
             const mx = (from.x + to.x) / 2, my = (from.y + to.y) / 2;
             const distLabel = e.dist < 1 ? (e.dist * 1000).toFixed(0) + 'm' : e.dist.toFixed(1) + 'km';
             ctx.font = '9px sans-serif';
@@ -5323,17 +5368,19 @@ function calcCrossSegmentDistance(a, b) {
         tEdges.get(eId).push({ to: sId, cost: iDist, type: 'internal', layerId: layer.id });
     }
 
-    // ─── STEP 3: Gap edges — connect each endpoint to nearest endpoint of a DIFFERENT layer ───
+    // ─── STEP 3: Gap edges — connect each endpoint to K nearest endpoints of DIFFERENT layers ───
     const nodeArr = Array.from(tNodes.entries());
+    const K_GAP = 3; // connect to top-K nearest neighbors for robust connectivity
     for (const [nId, nInfo] of nodeArr) {
-        let bestId = null, bestDist = Infinity;
+        const candidates = [];
         for (const [mId, mInfo] of nodeArr) {
             if (mInfo.layerId === nInfo.layerId) continue;
             const d = haversineDistance(nInfo.coord[0], nInfo.coord[1], mInfo.coord[0], mInfo.coord[1]);
-            if (d < bestDist) { bestDist = d; bestId = mId; }
+            candidates.push({ mId, d });
         }
-        if (bestId) {
-            // Penalize gap edges heavily (x100) so Dijkstra strongly prefers actual cable segments
+        candidates.sort((a, b) => a.d - b.d);
+        const topK = candidates.slice(0, K_GAP);
+        for (const { mId: bestId, d: bestDist } of topK) {
             const gapCost = bestDist * 100;
             if (!tEdges.get(nId).some(e => e.to === bestId && e.type === 'gap')) {
                 tEdges.get(nId).push({ to: bestId, cost: gapCost, type: 'gap', realDist: bestDist });
