@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<!-- NexiMap KML Studio v2.6.2 - Viewport bias inline toggle + settings fix -->
+<!-- NexiMap KML Studio v2.7 - Cross-segment measurement: measure across multiple connected segments -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NexiMap KML Studio v2.6.2</title>
+<title>NexiMap KML Studio v2.7</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='2' width='28' height='28' rx='4' fill='%230096D6'/%3E%3Cpath d='M8 12L16 8L24 12L16 16Z' fill='white' opacity='0.9'/%3E%3Cpath d='M8 16L16 20L24 16' stroke='white' stroke-width='1.5' fill='none'/%3E%3Cpath d='M8 20L16 24L24 20' stroke='white' stroke-width='1.5' fill='none'/%3E%3C/svg%3E"/>
 <style>
 :root {
@@ -958,7 +958,7 @@ header {
     <div class="app-logo">
         <svg width="20" height="20" viewBox="0 0 32 32"><rect x="2" y="2" width="28" height="28" rx="4" fill="#0096D6"/><path d="M8 12L16 8L24 12L16 16Z" fill="white" opacity="0.9"/><path d="M8 16L16 20L24 16" stroke="white" stroke-width="1.5" fill="none"/><path d="M8 20L16 24L24 20" stroke="white" stroke-width="1.5" fill="none"/></svg>
         NexiMap KML Studio
-        <span class="ver">v2.6.2</span>
+        <span class="ver">v2.7</span>
     </div>
 
     <!-- File Menu -->
@@ -2149,7 +2149,7 @@ function renderVertexDots() {
 
     const bounds = map.getBounds();
     const layersToShow = measureMode
-        ? [projectData.layers[selectedLayerId]].filter(Boolean)
+        ? Object.values(projectData.layers)
         : Object.values(projectData.layers);
 
     // Collect all visible vertices within viewport (with metadata)
@@ -3792,7 +3792,7 @@ document.addEventListener('keydown', (e) => {
     if (e.key === 'Delete' && selectedLayerId) { deleteSelected(); }
     if (e.key === 'Escape') {
         if (rulerMode) { deactivateRuler(); }
-        else if (measureMode) { measureMode = false; measureClicks = []; clearMeasureMarkers(); document.getElementById('btnMeasurePath').classList.remove('active'); if (!editMode) document.getElementById('editBanner').classList.remove('show'); const lcm = document.querySelector('.leaflet-container'); if (lcm) lcm.classList.remove('measure-cursor'); map.doubleClickZoom.enable(); renderVertexDots(); toast('Measure cancelled', 'info'); }
+        else if (measureMode) { measureMode = false; measureClicks = []; measureClickData = []; clearMeasureMarkers(); document.getElementById('btnMeasurePath').classList.remove('active'); if (!editMode) document.getElementById('editBanner').classList.remove('show'); const lcm = document.querySelector('.leaflet-container'); if (lcm) lcm.classList.remove('measure-cursor'); map.doubleClickZoom.enable(); renderVertexDots(); toast('Measure cancelled', 'info'); }
         else if (pinMode) { pinMode = false; document.getElementById('btnPlacePin').classList.remove('active'); document.getElementById('editBanner').classList.remove('show'); const lc2 = document.querySelector('.leaflet-container'); if (lc2) lc2.classList.remove('pin-cursor'); map.doubleClickZoom.enable(); toast('Pin mode cancelled', 'info'); }
         else if (drawMode) { drawCoords = []; if (drawPreviewLayer) { map.removeLayer(drawPreviewLayer); drawPreviewLayer = null; } drawMode = false; document.getElementById('btnDrawLine').classList.remove('active'); document.getElementById('editBanner').classList.remove('show'); toast('Draw cancelled', 'info'); }
         else if (editMode) toggleEditMode();
@@ -4098,9 +4098,6 @@ window.calcMultiDistance = function() {
 };
 
 window.startMeasureFromProps = function() {
-    if (!selectedLayerId || !projectData.layers[selectedLayerId] || projectData.layers[selectedLayerId].type !== 'line') {
-        toast('Select a line first', 'error'); return;
-    }
     if (!measureMode) toggleMeasureMode();
 };
 
@@ -4344,7 +4341,7 @@ window.toggleRulerMode = function() {
     // Deactivate other modes
     if (drawMode) { drawCoords = []; if (drawPreviewLayer) { map.removeLayer(drawPreviewLayer); drawPreviewLayer = null; } drawMode = false; document.getElementById('btnDrawLine').classList.remove('active'); }
     if (pinMode) { pinMode = false; document.getElementById('btnPlacePin').classList.remove('active'); const lc0 = document.querySelector('.leaflet-container'); if (lc0) lc0.classList.remove('pin-cursor'); map.doubleClickZoom.enable(); }
-    if (measureMode) { measureMode = false; measureClicks = []; clearMeasureMarkers(); document.getElementById('btnMeasurePath').classList.remove('active'); const lcm0 = document.querySelector('.leaflet-container'); if (lcm0) lcm0.classList.remove('measure-cursor'); map.doubleClickZoom.enable(); renderVertexDots(); }
+    if (measureMode) { measureMode = false; measureClicks = []; measureClickData = []; clearMeasureMarkers(); document.getElementById('btnMeasurePath').classList.remove('active'); const lcm0 = document.querySelector('.leaflet-container'); if (lcm0) lcm0.classList.remove('measure-cursor'); map.doubleClickZoom.enable(); renderVertexDots(); }
     if (addPointMode) { addPointMode = false; document.getElementById('btnAddPoint').classList.remove('active'); }
 
     rulerMode = true;
@@ -4770,6 +4767,9 @@ function showDistancePanel(data) {
         html += '<div style="margin-top:6px;border-top:1px solid #eee;padding-top:6px;">';
         html += '<div class="dist-row"><span class="dist-label">A-End (green):</span><span class="dist-value green">vertex ' + (data.aEnd + 1) + '</span></div>';
         html += '<div class="dist-row"><span class="dist-label">B-End (red):</span><span class="dist-value" style="color:var(--danger);">vertex ' + (data.bEnd + 1) + '</span></div>';
+        if (data.crossSegment) {
+            html += '<div class="dist-row"><span class="dist-label">Route type:</span><span class="dist-value" style="color:var(--accent);">cross-segment</span></div>';
+        }
         html += '<div class="dist-row"><span class="dist-label">Path distance:</span><span class="dist-value">' + formatDistance(data.geo) + '</span></div>';
         html += '<div class="dist-row"><span class="dist-label">Estimated (+'+ data.slack +'%):</span><span class="dist-value blue">' + formatDistance(data.est) + '</span></div>';
         html += '</div>';
@@ -4785,45 +4785,67 @@ window.closeDistancePanel = function() {
 
 
 // Shared measure click handler - called from both map click and polyline click
-function handleMeasureClick(latlng, knownIdx, knownLayerId) {
-    const l = projectData.layers[selectedLayerId];
-    if (!l || l.type !== 'line') { toast('Select a line first', 'error'); return; }
+// Cross-segment measurement data
+let measureClickData = []; // [{layerId, vertexIdx, coord}]
 
-    // If knownIdx provided (from vertex dot click), use it directly; otherwise find nearest via pixel distance
-    let idx;
-    if (knownIdx !== undefined && knownLayerId === selectedLayerId) {
-        idx = knownIdx;
+function handleMeasureClick(latlng, knownIdx, knownLayerId) {
+    // Find nearest vertex across ALL visible line layers
+    let bestLayerId = null, bestIdx = 0, bestDist = Infinity, bestCoord = null;
+
+    if (knownIdx !== undefined && knownLayerId) {
+        // Direct vertex dot click — use exact values
+        bestLayerId = knownLayerId;
+        bestIdx = knownIdx;
+        const l = projectData.layers[knownLayerId];
+        bestCoord = l ? l.coords[knownIdx] : null;
     } else {
-        idx = findNearestVertexByPixel(latlng, l.coords);
+        // Find nearest vertex by pixel distance across all visible lines
+        const clickPt = map.latLngToContainerPoint(latlng);
+        Object.values(projectData.layers).forEach(layer => {
+            if (!layer.visible || layer.type !== 'line' || layer.coords.length < 1) return;
+            layer.coords.forEach((c, i) => {
+                const pt = map.latLngToContainerPoint(c);
+                const dx = clickPt.x - pt.x, dy = clickPt.y - pt.y;
+                const d = dx * dx + dy * dy;
+                if (d < bestDist) { bestDist = d; bestLayerId = layer.id; bestIdx = i; bestCoord = c; }
+            });
+        });
     }
 
-    // Place the marker at the exact vertex coordinates (not at the click point)
-    const vertexCoord = l.coords[idx];
+    if (!bestLayerId || !bestCoord) { toast('No line found nearby', 'error'); return; }
 
-    if (measureClicks.length === 0) {
+    if (measureClickData.length === 0) {
         // FIRST CLICK: A-End (green)
-        measureClicks.push(idx);
+        measureClickData.push({ layerId: bestLayerId, vertexIdx: bestIdx, coord: bestCoord });
         const icon = L.divIcon({ className: 'measure-marker-a', iconSize: [14,14], iconAnchor: [7,7] });
-        const m = L.marker(vertexCoord, { icon, zIndexOffset: 3000 }).addTo(map);
+        const m = L.marker(bestCoord, { icon, zIndexOffset: 3000 }).addTo(map);
         measureMarkers.push(m);
-        document.getElementById('editBanner').textContent = '📏 MEASURE — 🟢 A-End set at vertex ' + (idx+1) + ' — now click B-End (red)';
-        toast('🟢 A-End set at vertex ' + (idx+1) + ' — now click B-End', 'info');
-    } else if (measureClicks.length === 1) {
+        const lName = projectData.layers[bestLayerId] ? projectData.layers[bestLayerId].name : '';
+        document.getElementById('editBanner').textContent = '📏 MEASURE — 🟢 A-End set — now click 🔴 B-End on any line';
+        toast('🟢 A-End set — now click B-End on any line', 'info');
+    } else if (measureClickData.length === 1) {
         // SECOND CLICK: B-End (red)
-        measureClicks.push(idx);
+        measureClickData.push({ layerId: bestLayerId, vertexIdx: bestIdx, coord: bestCoord });
         const icon = L.divIcon({ className: 'measure-marker-b', iconSize: [14,14], iconAnchor: [7,7] });
-        const m = L.marker(vertexCoord, { icon, zIndexOffset: 3000 }).addTo(map);
+        const m = L.marker(bestCoord, { icon, zIndexOffset: 3000 }).addTo(map);
         measureMarkers.push(m);
 
-        // Calculate and display
-        const aIdx = measureClicks[0], bIdx = measureClicks[1];
-        const geo = calcPathDistance(l.coords, aIdx, bIdx);
-        const est = geo * (1 + fiberSlackPct / 100);
-        // Draw highlight line between points
-        const startI = Math.min(aIdx, bIdx), endI = Math.max(aIdx, bIdx);
-        const segCoords = l.coords.slice(startI, endI + 1);
-        measureLineLayer = L.polyline(segCoords, { color: '#f59e0b', weight: 5, opacity: 0.7, dashArray: '10,6' }).addTo(map);
-        showDistancePanel({ title: 'A-End to B-End', geo, est, slack: fiberSlackPct, aEnd: aIdx, bEnd: bIdx });
+        // Calculate cross-segment distance
+        const a = measureClickData[0], b = measureClickData[1];
+        const result = calcCrossSegmentDistance(a, b);
+
+        // Draw highlight polyline
+        if (result.pathCoords.length > 1) {
+            measureLineLayer = L.polyline(result.pathCoords, { color: '#f59e0b', weight: 5, opacity: 0.7, dashArray: '10,6' }).addTo(map);
+        }
+
+        const est = result.distance * (1 + fiberSlackPct / 100);
+        showDistancePanel({
+            title: 'A-End to B-End' + (result.segments > 1 ? ' (' + result.segments + ' segments)' : ''),
+            geo: result.distance, est, slack: fiberSlackPct,
+            aEnd: a.vertexIdx, bEnd: b.vertexIdx,
+            crossSegment: result.segments > 1
+        });
 
         // Reset measure mode
         measureMode = false;
@@ -4832,14 +4854,169 @@ function handleMeasureClick(latlng, knownIdx, knownLayerId) {
         const lc = document.querySelector('.leaflet-container');
         if (lc) lc.classList.remove('measure-cursor');
         map.doubleClickZoom.enable();
-        // Remove vertex dots if not toggled on
         renderVertexDots();
+        measureClickData = [];
         measureClicks = [];
     } else {
-        // Safety: reset if somehow > 1
+        measureClickData = [];
         measureClicks = [];
         handleMeasureClick(latlng, knownIdx, knownLayerId);
     }
+}
+
+// Calculate distance across multiple segments in a folder
+function calcCrossSegmentDistance(a, b) {
+    const layerA = projectData.layers[a.layerId];
+    const layerB = projectData.layers[b.layerId];
+    if (!layerA || !layerB) return { distance: 0, pathCoords: [], segments: 0 };
+
+    // SAME LAYER: simple case
+    if (a.layerId === b.layerId) {
+        const dist = calcPathDistance(layerA.coords, a.vertexIdx, b.vertexIdx);
+        const startI = Math.min(a.vertexIdx, b.vertexIdx), endI = Math.max(a.vertexIdx, b.vertexIdx);
+        return { distance: dist, pathCoords: layerA.coords.slice(startI, endI + 1), segments: 1 };
+    }
+
+    // DIFFERENT LAYERS: find common parent folder, get ordered layers, trace path
+    const folderA = layerA.folderId, folderB = layerB.folderId;
+
+    // Collect all line layers in folder order (recursive) starting from common ancestor
+    const commonFolder = findCommonAncestorFolder(folderA, folderB);
+    if (!commonFolder) {
+        // No common folder — just straight-line distance between the two points
+        const dist = haversineDistance(a.coord[0], a.coord[1], b.coord[0], b.coord[1]);
+        return { distance: dist, pathCoords: [a.coord, b.coord], segments: 0 };
+    }
+
+    // Get ordered list of all line layers in this folder tree
+    const orderedLayers = getOrderedLineLayers(commonFolder);
+
+    // Find positions of our two layers in the ordered list
+    let idxA = orderedLayers.findIndex(l => l.id === a.layerId);
+    let idxB = orderedLayers.findIndex(l => l.id === b.layerId);
+    if (idxA === -1 || idxB === -1) {
+        const dist = haversineDistance(a.coord[0], a.coord[1], b.coord[0], b.coord[1]);
+        return { distance: dist, pathCoords: [a.coord, b.coord], segments: 0 };
+    }
+
+    // Ensure A comes before B in the list
+    let vertA = a.vertexIdx, vertB = b.vertexIdx;
+    if (idxA > idxB) {
+        [idxA, idxB] = [idxB, idxA];
+        [vertA, vertB] = [b.vertexIdx, a.vertexIdx];
+    }
+
+    // Determine direction: check if segments connect start-to-end or end-to-start
+    // Build the path by figuring out the orientation of each segment
+    let totalDist = 0;
+    let pathCoords = [];
+    let segCount = 0;
+
+    for (let si = idxA; si <= idxB; si++) {
+        const layer = orderedLayers[si];
+        const coords = layer.coords;
+        if (coords.length < 1) continue;
+
+        let startV, endV;
+        if (si === idxA && si === idxB) {
+            // Same layer
+            startV = Math.min(vertA, vertB);
+            endV = Math.max(vertA, vertB);
+        } else if (si === idxA) {
+            // First segment: from clicked vertex to the end that connects to next segment
+            const nextLayer = orderedLayers[si + 1];
+            if (nextLayer && nextLayer.coords.length > 0) {
+                const distToFirst = haversineDistance(coords[coords.length-1][0], coords[coords.length-1][1], nextLayer.coords[0][0], nextLayer.coords[0][1]);
+                const distToLast = haversineDistance(coords[coords.length-1][0], coords[coords.length-1][1], nextLayer.coords[nextLayer.coords.length-1][0], nextLayer.coords[nextLayer.coords.length-1][1]);
+                if (distToFirst <= distToLast) {
+                    // This layer's end connects to next layer's start — forward direction
+                    startV = vertA;
+                    endV = coords.length - 1;
+                } else {
+                    // This layer's start connects to next layer's end — still go from vertex to end
+                    startV = 0;
+                    endV = vertA;
+                }
+            } else {
+                startV = vertA; endV = coords.length - 1;
+            }
+        } else if (si === idxB) {
+            // Last segment: from start to clicked vertex
+            const prevLayer = orderedLayers[si - 1];
+            if (prevLayer && prevLayer.coords.length > 0) {
+                const distFromFirst = haversineDistance(coords[0][0], coords[0][1], prevLayer.coords[prevLayer.coords.length-1][0], prevLayer.coords[prevLayer.coords.length-1][1]);
+                const distFromLast = haversineDistance(coords[coords.length-1][0], coords[coords.length-1][1], prevLayer.coords[prevLayer.coords.length-1][0], prevLayer.coords[prevLayer.coords.length-1][1]);
+                if (distFromFirst <= distFromLast) {
+                    startV = 0; endV = vertB;
+                } else {
+                    startV = vertB; endV = coords.length - 1;
+                }
+            } else {
+                startV = 0; endV = vertB;
+            }
+        } else {
+            // Middle segment: use entire segment
+            startV = 0; endV = coords.length - 1;
+        }
+
+        const sI = Math.min(startV, endV), eI = Math.max(startV, endV);
+        const sliceCoords = coords.slice(sI, eI + 1);
+
+        // Check if we need to reverse based on connectivity
+        if (pathCoords.length > 0 && sliceCoords.length > 0) {
+            const lastPt = pathCoords[pathCoords.length - 1];
+            const dToStart = haversineDistance(lastPt[0], lastPt[1], sliceCoords[0][0], sliceCoords[0][1]);
+            const dToEnd = haversineDistance(lastPt[0], lastPt[1], sliceCoords[sliceCoords.length-1][0], sliceCoords[sliceCoords.length-1][1]);
+            if (dToEnd < dToStart) sliceCoords.reverse();
+        }
+
+        for (let i = 0; i < sliceCoords.length - 1; i++) {
+            totalDist += haversineDistance(sliceCoords[i][0], sliceCoords[i][1], sliceCoords[i+1][0], sliceCoords[i+1][1]);
+        }
+        pathCoords = pathCoords.concat(sliceCoords);
+        segCount++;
+    }
+
+    return { distance: totalDist, pathCoords, segments: segCount };
+}
+
+// Find common ancestor folder for two folder IDs
+function findCommonAncestorFolder(fIdA, fIdB) {
+    if (fIdA === fIdB) return fIdA;
+    // Build ancestor chains
+    function ancestors(fId) {
+        const chain = [fId];
+        let cur = fId;
+        while (cur) {
+            const f = projectData.folders.find(ff => ff.id === cur);
+            if (f && f.parentId) { chain.push(f.parentId); cur = f.parentId; }
+            else break;
+        }
+        return chain;
+    }
+    const chainA = ancestors(fIdA);
+    const chainB = ancestors(fIdB);
+    for (const fId of chainA) {
+        if (chainB.includes(fId)) return fId;
+    }
+    return null;
+}
+
+// Get all line layers in folder order (depth-first, items order)
+function getOrderedLineLayers(folderId) {
+    const result = [];
+    function recurse(fId) {
+        const f = projectData.folders.find(ff => ff.id === fId);
+        if (!f) return;
+        f.items.forEach(id => {
+            if (projectData.folders.find(ff => ff.id === id)) return; // skip subfolder refs
+            const l = projectData.layers[id];
+            if (l && l.type === 'line') result.push(l);
+        });
+        projectData.folders.filter(ff => ff.parentId === fId).forEach(sf => recurse(sf.id));
+    }
+    recurse(folderId);
+    return result;
 }
 
 // Find nearest vertex using PIXEL distance for accuracy (v2.0)
@@ -4866,40 +5043,29 @@ window.toggleMeasureMode = function() {
     document.getElementById('btnMeasurePath').classList.toggle('active', measureMode);
     if (measureMode) {
         measureClicks = [];
+        measureClickData = [];
         clearMeasureMarkers();
-        if (!selectedLayerId || !projectData.layers[selectedLayerId] || projectData.layers[selectedLayerId].type !== 'line') {
-            toast('Select a line layer first, then click two points on the line', 'error');
-            measureMode = false;
-            document.getElementById('btnMeasurePath').classList.remove('active');
-            return;
-        }
-        document.getElementById('editBanner').textContent = '📏 MEASURE — Click on a vertex to set 🟢 A-End (origin), then 🔴 B-End (destination)';
+        document.getElementById('editBanner').textContent = '📏 MEASURE — Click anywhere on a line to set 🟢 A-End (origin), then 🔴 B-End (destination)';
         document.getElementById('editBanner').classList.add('show');
-        // Crosshair cursor + instant click (no dblclick delay)
         const lc = document.querySelector('.leaflet-container');
         if (lc) lc.classList.add('measure-cursor');
         map.doubleClickZoom.disable();
-        // Show vertex dots for the selected line
         renderVertexDots();
-        toast('Click a vertex dot: first = 🟢 A-End, second = 🔴 B-End', 'info');
+        toast('Click on any line: first = 🟢 A-End, second = 🔴 B-End', 'info');
     } else {
         clearMeasureMarkers();
+        measureClickData = [];
         if (!editMode) document.getElementById('editBanner').classList.remove('show');
         const lc = document.querySelector('.leaflet-container');
         if (lc) lc.classList.remove('measure-cursor');
         map.doubleClickZoom.enable();
-        renderVertexDots(); // Re-render (will hide dots if toggle is off)
+        renderVertexDots();
         toast('Measure mode OFF', 'info');
     }
 };
 
 window.ctxMeasureAB = function() {
-    if (ctxTargetId) {
-        selectLayer(ctxTargetId);
-        setTimeout(() => {
-            if (!measureMode) toggleMeasureMode();
-        }, 100);
-    }
+    if (!measureMode) toggleMeasureMode();
     ctxTargetFolderId = null;
 };
 
