@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<!-- NexiMap KML Studio v2.5 - Multi-format export (KML/KMZ/GeoJSON/Simplified) in context menu & Save As -->
+<!-- NexiMap KML Studio v2.6 - Segment-level checkboxes, folder/subfolder visibility toggles, match-selection-to-visibility -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NexiMap KML Studio v2.5</title>
+<title>NexiMap KML Studio v2.6</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='2' width='28' height='28' rx='4' fill='%230096D6'/%3E%3Cpath d='M8 12L16 8L24 12L16 16Z' fill='white' opacity='0.9'/%3E%3Cpath d='M8 16L16 20L24 16' stroke='white' stroke-width='1.5' fill='none'/%3E%3Cpath d='M8 20L16 24L24 20' stroke='white' stroke-width='1.5' fill='none'/%3E%3C/svg%3E"/>
 <style>
 :root {
@@ -807,6 +807,28 @@ header {
     width: 14px; height: 14px; margin: 0 2px 0 0;
     accent-color: var(--accent); cursor: pointer; flex-shrink: 0;
 }
+/* Segment (layer) checkbox */
+.tree-item-check {
+    width: 13px; height: 13px; margin: 0 1px 0 0;
+    accent-color: var(--accent); cursor: pointer; flex-shrink: 0;
+}
+
+/* Folder/subfolder visibility eye */
+.tree-folder-vis {
+    width: 16px; height: 16px; cursor: pointer; color: var(--text-muted);
+    display: flex; align-items: center; flex-shrink: 0; margin-left: auto;
+}
+.tree-folder-vis.folder-hidden { opacity: 0.3; }
+
+/* Match selection button */
+#matchSelBtn {
+    background: none; border: 1px solid var(--border); border-radius: 4px;
+    padding: 2px 7px; cursor: pointer; font-size: 10px; color: var(--text-secondary);
+    display: flex; align-items: center; gap: 3px; white-space: nowrap;
+    transition: all 0.15s;
+}
+#matchSelBtn:hover { background: var(--accent-light); border-color: var(--accent); color: var(--accent); }
+
 
 /* Pin type selector window */
 #pinTypeWindow {
@@ -890,7 +912,7 @@ header {
     <div class="app-logo">
         <svg width="20" height="20" viewBox="0 0 32 32"><rect x="2" y="2" width="28" height="28" rx="4" fill="#0096D6"/><path d="M8 12L16 8L24 12L16 16Z" fill="white" opacity="0.9"/><path d="M8 16L16 20L24 16" stroke="white" stroke-width="1.5" fill="none"/><path d="M8 20L16 24L24 20" stroke="white" stroke-width="1.5" fill="none"/></svg>
         NexiMap KML Studio
-        <span class="ver">v2.5</span>
+        <span class="ver">v2.6</span>
     </div>
 
     <!-- File Menu -->
@@ -987,6 +1009,10 @@ header {
                 <input type="checkbox" id="filterVertexDots" onchange="applyLayerFilters()">
                 ○ Vertices <span id="vertexZoomHint" style="font-size:9px;color:var(--text-muted);"></span>
             </label>
+            <button id="matchSelBtn" onclick="matchCheckboxesToVisibility()" title="Set checkboxes to match current visibility state">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                Match ☑ ↔ 👁
+            </button>
         </div>
         <div id="leftResize"></div>
     </div>
@@ -2154,6 +2180,16 @@ function updateVertexZoomHint() {
 
 window.applyLayerFilters = function() { renderMapLayers(); updateVertexZoomHint(); };
 
+// Match checkboxes to visibility: checked = visible, unchecked = hidden
+window.matchCheckboxesToVisibility = function() {
+    // Sync all layers: checked ↔ visible
+    Object.values(projectData.layers).forEach(l => { l.checked = l.visible !== false; });
+    // Sync all folders: checked ↔ visible
+    projectData.folders.forEach(f => { f.checked = f.visible !== false; });
+    renderFolderTree();
+    toast('Checkboxes matched to visibility state', 'info');
+};
+
 function renderVertexMarkers(layer) {
     layer.vertexMarkers.forEach(m => map.removeLayer(m));
     layer.vertexMarkers = [];
@@ -2220,12 +2256,20 @@ function createFolderEl(folder) {
     header.className = 'tree-folder-header' + (selectedFolderId === folder.id ? ' folder-selected' : '');
     const count = countItems(folder);
     const isChecked = folder.checked !== false;
+    const folderVis = folder.visible !== false;
     header.innerHTML = `
         <input type="checkbox" class="tree-folder-check" ${isChecked ? 'checked' : ''} data-folder-id="${folder.id}">
         <span class="tree-toggle ${folder.expanded ? '' : 'collapsed'}">▼</span>
         <span class="folder-icon">${folder.expanded ? '📂' : '📁'}</span>
         <span class="tree-folder-name">${esc(folder.name)}</span>
         <span class="tree-folder-count">${count}</span>
+        <span class="tree-folder-vis ${folderVis ? '' : 'folder-hidden'}" data-folder-id="${folder.id}">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            ${folderVis
+                ? '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>'
+                : '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/>'
+            }</svg>
+        </span>
     `;
 
     const checkbox = header.querySelector('.tree-folder-check');
@@ -2234,15 +2278,30 @@ function createFolderEl(folder) {
         folder.checked = checkbox.checked;
         function cascadeCheck(fId, val) {
             const f = projectData.folders.find(ff => ff.id === fId);
-            if (f) f.checked = val;
+            if (f) { f.checked = val; f.items.forEach(id => { const l = projectData.layers[id]; if (l) l.checked = val; }); }
             projectData.folders.filter(ff => ff.parentId === fId).forEach(sf => cascadeCheck(sf.id, val));
         }
         cascadeCheck(folder.id, checkbox.checked);
         renderFolderTree();
     });
 
+    // Folder visibility eye click
+    const folderEye = header.querySelector('.tree-folder-vis');
+    if (folderEye) folderEye.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const newVis = folder.visible === false ? true : false;
+        function cascadeVis(fId, val) {
+            const f = projectData.folders.find(ff => ff.id === fId);
+            if (f) { f.visible = val; f.items.forEach(id => { const l = projectData.layers[id]; if (l) l.visible = val; }); }
+            projectData.folders.filter(ff => ff.parentId === fId).forEach(sf => cascadeVis(sf.id, val));
+        }
+        cascadeVis(folder.id, newVis);
+        renderAll(); updatePropsPanel();
+    });
+
     header.addEventListener('click', (e) => {
         if (e.target.classList.contains('tree-folder-check')) return;
+        if (e.target.closest('.tree-folder-vis')) return;
         if (e.target.closest('.tree-toggle') || e.target.closest('.folder-icon')) {
             // Click on toggle arrow or folder icon: expand/collapse
             folder.expanded = !folder.expanded; renderFolderTree();
@@ -2299,7 +2358,9 @@ function createFolderEl(folder) {
         const typeIcon = layer.type === 'line'
             ? '<svg class="tree-line-icon" viewBox="0 0 20 8" fill="none"><polyline points="1,6 6,2 14,5 19,1" stroke="' + layer.color + '" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>'
             : '<svg class="tree-pin-icon" viewBox="0 0 12 16"><path d="M6 0C2.7 0 0 2.7 0 6c0 4.5 6 10 6 10s6-5.5 6-10C12 2.7 9.3 0 6 0z" fill="' + layer.color + '"/><circle cx="6" cy="6" r="2.2" fill="white" opacity="0.9"/></svg>';
+        const layerChecked = layer.checked !== false;
         item.innerHTML = `
+            <input type="checkbox" class="tree-item-check" ${layerChecked ? 'checked' : ''} data-layer-id="${layer.id}">
             <span class="tree-item-color" style="background:${layer.color}"></span>
             ${typeIcon}
             <span class="tree-item-name">${esc(layer.name)}</span>
@@ -2314,6 +2375,13 @@ function createFolderEl(folder) {
         `;
 
         item.addEventListener('click', (e) => {
+            if (e.target.closest('.tree-item-check')) {
+                e.stopPropagation();
+                layer.checked = e.target.checked;
+                // Update parent folder indeterminate state (visual only, no cascade)
+                renderFolderTree();
+                return;
+            }
             if (e.target.closest('.tree-item-vis')) {
                 layer.visible = !layer.visible; renderAll(); return;
             }
@@ -4778,7 +4846,7 @@ window.ctxExportAs = async function(format) {
         function collectChecked(fId) {
             const f = projectData.folders.find(ff => ff.id === fId);
             if (!f || f.checked === false) return;
-            f.items.forEach(id => { if (projectData.layers[id]) layerIds.push(id); });
+            f.items.forEach(id => { const l = projectData.layers[id]; if (l && l.checked !== false) layerIds.push(id); });
             projectData.folders.filter(ff => ff.parentId === fId && ff.checked !== false).forEach(sf => collectChecked(sf.id));
         }
         collectChecked(ctxTargetFolderId);
