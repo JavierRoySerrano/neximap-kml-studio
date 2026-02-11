@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<!-- NexiMap KML Studio v2.8.2 - K-nearest neighbor sparse graph for fast Dijkstra -->
+<!-- NexiMap KML Studio v2.8.3 - Fixed usedLayerIds in all return paths + glow reliability -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NexiMap KML Studio v2.8.2</title>
+<title>NexiMap KML Studio v2.8.3</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='2' width='28' height='28' rx='4' fill='%230096D6'/%3E%3Cpath d='M8 12L16 8L24 12L16 16Z' fill='white' opacity='0.9'/%3E%3Cpath d='M8 16L16 20L24 16' stroke='white' stroke-width='1.5' fill='none'/%3E%3Cpath d='M8 20L16 24L24 20' stroke='white' stroke-width='1.5' fill='none'/%3E%3C/svg%3E"/>
 <style>
 :root {
@@ -958,7 +958,7 @@ header {
     <div class="app-logo">
         <svg width="20" height="20" viewBox="0 0 32 32"><rect x="2" y="2" width="28" height="28" rx="4" fill="#0096D6"/><path d="M8 12L16 8L24 12L16 16Z" fill="white" opacity="0.9"/><path d="M8 16L16 20L24 16" stroke="white" stroke-width="1.5" fill="none"/><path d="M8 20L16 24L24 20" stroke="white" stroke-width="1.5" fill="none"/></svg>
         NexiMap KML Studio
-        <span class="ver">v2.8.2</span>
+        <span class="ver">v2.8.3</span>
     </div>
 
     <!-- File Menu -->
@@ -4843,7 +4843,10 @@ function handleMeasureClick(latlng, knownIdx, knownLayerId) {
 
         // Calculate cross-segment distance
         const a = measureClickData[0], b = measureClickData[1];
+        console.log('Measure: A layer=' + a.layerId + ' vtx=' + a.vertexIdx + ', B layer=' + b.layerId + ' vtx=' + b.vertexIdx);
         const result = calcCrossSegmentDistance(a, b);
+        console.log('Measure result: segments=' + result.segments + ', usedLayers=' + (result.usedLayerIds||[]).length + ', dist=' + result.distance.toFixed(2) + 'km');
+        if (result.segNames) console.log('Segments:', result.segNames.join(' → '));
 
         // Draw highlight polyline
         if (result.pathCoords.length > 1) {
@@ -4886,13 +4889,13 @@ function handleMeasureClick(latlng, knownIdx, knownLayerId) {
 function calcCrossSegmentDistance(a, b) {
     const layerA = projectData.layers[a.layerId];
     const layerB = projectData.layers[b.layerId];
-    if (!layerA || !layerB) return { distance: 0, pathCoords: [], segments: 0 };
+    if (!layerA || !layerB) return { distance: 0, pathCoords: [], segments: 0, usedLayerIds: [], segNames: [], segDistances: [] };
 
     // SAME LAYER: simple case
     if (a.layerId === b.layerId) {
         const dist = calcPathDistance(layerA.coords, a.vertexIdx, b.vertexIdx);
         const startI = Math.min(a.vertexIdx, b.vertexIdx), endI = Math.max(a.vertexIdx, b.vertexIdx);
-        return { distance: dist, pathCoords: layerA.coords.slice(startI, endI + 1), segments: 1 };
+        return { distance: dist, pathCoords: layerA.coords.slice(startI, endI + 1), segments: 1, usedLayerIds: [a.layerId], segNames: [layerA.name], segDistances: [dist] };
     }
 
     // DIFFERENT LAYERS: build a connected chain from A to B using all visible line layers
@@ -4900,7 +4903,7 @@ function calcCrossSegmentDistance(a, b) {
     const allLines = Object.values(projectData.layers).filter(l => l.visible && l.type === 'line' && l.coords.length >= 2);
     if (allLines.length < 2) {
         const dist = haversineDistance(a.coord[0], a.coord[1], b.coord[0], b.coord[1]);
-        return { distance: dist, pathCoords: [a.coord, b.coord], segments: 0 };
+        return { distance: dist, pathCoords: [a.coord, b.coord], segments: 0, usedLayerIds: [], segNames: [], segDistances: [] };
     }
 
     // Step 2: Build SPARSE adjacency graph — for each endpoint, find K nearest neighbors
@@ -5057,7 +5060,7 @@ function calcCrossSegmentDistance(a, b) {
 
     if (!posA || !posB) {
         const dist = haversineDistance(a.coord[0], a.coord[1], b.coord[0], b.coord[1]);
-        return { distance: dist, pathCoords: [a.coord, b.coord], segments: 0 };
+        return { distance: dist, pathCoords: [a.coord, b.coord], segments: 0, usedLayerIds: [], segNames: [], segDistances: [] };
     }
 
     // Ensure A comes before B
