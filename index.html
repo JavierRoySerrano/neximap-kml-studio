@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<!-- NexiMap KML Studio v2.7.1 - Fixed cross-segment path tracing with proper orientation detection -->
+<!-- NexiMap KML Studio v2.7.2 - Cross-folder measurement: trace route across any connected visible segments -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NexiMap KML Studio v2.7.1</title>
+<title>NexiMap KML Studio v2.7.2</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='2' width='28' height='28' rx='4' fill='%230096D6'/%3E%3Cpath d='M8 12L16 8L24 12L16 16Z' fill='white' opacity='0.9'/%3E%3Cpath d='M8 16L16 20L24 16' stroke='white' stroke-width='1.5' fill='none'/%3E%3Cpath d='M8 20L16 24L24 20' stroke='white' stroke-width='1.5' fill='none'/%3E%3C/svg%3E"/>
 <style>
 :root {
@@ -958,7 +958,7 @@ header {
     <div class="app-logo">
         <svg width="20" height="20" viewBox="0 0 32 32"><rect x="2" y="2" width="28" height="28" rx="4" fill="#0096D6"/><path d="M8 12L16 8L24 12L16 16Z" fill="white" opacity="0.9"/><path d="M8 16L16 20L24 16" stroke="white" stroke-width="1.5" fill="none"/><path d="M8 20L16 24L24 20" stroke="white" stroke-width="1.5" fill="none"/></svg>
         NexiMap KML Studio
-        <span class="ver">v2.7.1</span>
+        <span class="ver">v2.7.2</span>
     </div>
 
     <!-- File Menu -->
@@ -4864,7 +4864,7 @@ function handleMeasureClick(latlng, knownIdx, knownLayerId) {
     }
 }
 
-// Calculate distance across multiple segments in a folder
+// Calculate distance across any connected visible segments (folder-agnostic)
 function calcCrossSegmentDistance(a, b) {
     const layerA = projectData.layers[a.layerId];
     const layerB = projectData.layers[b.layerId];
@@ -4877,112 +4877,162 @@ function calcCrossSegmentDistance(a, b) {
         return { distance: dist, pathCoords: layerA.coords.slice(startI, endI + 1), segments: 1 };
     }
 
-    // DIFFERENT LAYERS: build a continuous oriented chain from all segments
-    const folderA = layerA.folderId, folderB = layerB.folderId;
-    const commonFolder = findCommonAncestorFolder(folderA, folderB);
-    if (!commonFolder) {
+    // DIFFERENT LAYERS: build a connected chain from A to B using all visible line layers
+    // Step 1: Collect all visible line layers as graph nodes with endpoint info
+    const allLines = Object.values(projectData.layers).filter(l => l.visible && l.type === 'line' && l.coords.length >= 2);
+    if (allLines.length < 2) {
         const dist = haversineDistance(a.coord[0], a.coord[1], b.coord[0], b.coord[1]);
         return { distance: dist, pathCoords: [a.coord, b.coord], segments: 0 };
     }
 
-    // Step 1: Get all line layers, orient them into a continuous chain
-    const allLayers = getOrderedLineLayers(commonFolder);
-    if (allLayers.length < 2) {
-        const dist = haversineDistance(a.coord[0], a.coord[1], b.coord[0], b.coord[1]);
-        return { distance: dist, pathCoords: [a.coord, b.coord], segments: 0 };
+    // Step 2: Build adjacency graph based on endpoint proximity
+    // For each segment, store its two endpoints. Two segments are adjacent if
+    // one endpoint of one is close (<0.5 km) to an endpoint of the other.
+    const CONNECT_THRESHOLD = 0.5; // km — max gap to consider segments connected
+
+    function segEndpoints(layer) {
+        return {
+            start: layer.coords[0],
+            end: layer.coords[layer.coords.length - 1]
+        };
     }
 
-    // Step 2: Build oriented chain — for each segment, determine if it needs reversing
-    // to form a continuous path. Use greedy endpoint matching.
-    const oriented = []; // each entry: { layerId, coords: [...] } with coords in correct direction
-    oriented.push({ layerId: allLayers[0].id, coords: allLayers[0].coords.slice() });
+    // Build adjacency: for each layer, which other layers connect to it and at which ends
+    const adj = new Map(); // layerId -> [{neighborId, myEnd:'start'|'end', theirEnd:'start'|'end'}]
+    allLines.forEach(l => adj.set(l.id, []));
 
-    for (let i = 1; i < allLayers.length; i++) {
-        const prev = oriented[oriented.length - 1];
-        const prevEnd = prev.coords[prev.coords.length - 1];
-        const cur = allLayers[i].coords;
-        if (cur.length < 1) continue;
-
-        const curStart = cur[0];
-        const curEnd = cur[cur.length - 1];
-
-        // Check which end of current segment is closer to end of previous segment
-        const dStartToStart = haversineDistance(prevEnd[0], prevEnd[1], curStart[0], curStart[1]);
-        const dStartToEnd = haversineDistance(prevEnd[0], prevEnd[1], curEnd[0], curEnd[1]);
-
-        if (dStartToEnd < dStartToStart) {
-            // Current segment is reversed — its end is closer to prev end
-            oriented.push({ layerId: allLayers[i].id, coords: cur.slice().reverse() });
-        } else {
-            oriented.push({ layerId: allLayers[i].id, coords: cur.slice() });
+    for (let i = 0; i < allLines.length; i++) {
+        const epI = segEndpoints(allLines[i]);
+        for (let j = i + 1; j < allLines.length; j++) {
+            const epJ = segEndpoints(allLines[j]);
+            // Check all 4 endpoint combinations
+            const pairs = [
+                { myEnd: 'end', theirEnd: 'start', d: haversineDistance(epI.end[0], epI.end[1], epJ.start[0], epJ.start[1]) },
+                { myEnd: 'end', theirEnd: 'end', d: haversineDistance(epI.end[0], epI.end[1], epJ.end[0], epJ.end[1]) },
+                { myEnd: 'start', theirEnd: 'start', d: haversineDistance(epI.start[0], epI.start[1], epJ.start[0], epJ.start[1]) },
+                { myEnd: 'start', theirEnd: 'end', d: haversineDistance(epI.start[0], epI.start[1], epJ.end[0], epJ.end[1]) },
+            ];
+            // Find closest connection
+            const best = pairs.reduce((a, b) => a.d < b.d ? a : b);
+            if (best.d < CONNECT_THRESHOLD) {
+                adj.get(allLines[i].id).push({ neighborId: allLines[j].id, myEnd: best.myEnd, theirEnd: best.theirEnd });
+                // Reverse for the other direction
+                const revMyEnd = best.theirEnd, revTheirEnd = best.myEnd;
+                adj.get(allLines[j].id).push({ neighborId: allLines[i].id, myEnd: revMyEnd, theirEnd: revTheirEnd });
+            }
         }
     }
 
-    // Step 3: Also check if the ENTIRE chain needs reversing
-    // (first segment might itself be backwards relative to point A)
-    // Build a flat coordinate chain to locate A and B
-    let chainA = null, chainB = null;
-    let globalIdx = 0;
-    const chainInfo = []; // [{layerId, startGlobal, endGlobal, origVertexMap}]
+    // Step 3: BFS/DFS from layer A to layer B to find the path of segments
+    const visited = new Set();
+    const queue = [{ layerId: a.layerId, path: [a.layerId], connections: [] }];
+    visited.add(a.layerId);
+    let foundPath = null;
 
-    for (const seg of oriented) {
-        const start = globalIdx;
-        chainInfo.push({ layerId: seg.layerId, startGlobal: start, coordCount: seg.coords.length });
-        globalIdx += seg.coords.length;
+    while (queue.length > 0) {
+        const cur = queue.shift();
+        if (cur.layerId === b.layerId) {
+            foundPath = cur;
+            break;
+        }
+        const neighbors = adj.get(cur.layerId) || [];
+        for (const n of neighbors) {
+            if (!visited.has(n.neighborId)) {
+                visited.add(n.neighborId);
+                queue.push({
+                    layerId: n.neighborId,
+                    path: [...cur.path, n.neighborId],
+                    connections: [...cur.connections, { from: cur.layerId, myEnd: n.myEnd, theirEnd: n.theirEnd, to: n.neighborId }]
+                });
+            }
+        }
     }
 
-    // Find where A and B sit in the oriented chain
-    function findInChain(layerId, origVertexIdx) {
-        const layer = projectData.layers[layerId];
-        const targetCoord = layer.coords[origVertexIdx];
-        // Search through oriented segments for this layer
-        for (const seg of oriented) {
-            if (seg.layerId !== layerId) continue;
-            // Find the coord in the oriented (possibly reversed) array
-            for (let ci = 0; ci < seg.coords.length; ci++) {
-                if (Math.abs(seg.coords[ci][0] - targetCoord[0]) < 1e-9 &&
-                    Math.abs(seg.coords[ci][1] - targetCoord[1]) < 1e-9) {
-                    return { segIdx: oriented.indexOf(seg), localIdx: ci };
+    if (!foundPath) {
+        // No connected path found — straight-line fallback
+        const dist = haversineDistance(a.coord[0], a.coord[1], b.coord[0], b.coord[1]);
+        return { distance: dist, pathCoords: [a.coord, b.coord], segments: 0 };
+    }
+
+    // Step 4: Build oriented coordinate chain along the found path
+    const segPath = foundPath.path; // ordered layer IDs from A to B
+    const conns = foundPath.connections; // connection info between consecutive layers
+
+    // Orient each segment so it flows in the correct direction
+    const oriented = []; // [{layerId, coords, forward}]
+
+    for (let si = 0; si < segPath.length; si++) {
+        const layer = projectData.layers[segPath[si]];
+        const coords = layer.coords.slice();
+
+        if (si === 0) {
+            // First segment: determine direction based on connection to next
+            if (conns.length > 0 && conns[0].from === layer.id) {
+                // myEnd tells us which end connects to next segment
+                if (conns[0].myEnd === 'start') {
+                    // Our start connects to next — so we need to reverse (we want to travel toward start)
+                    coords.reverse();
+                }
+                // If myEnd === 'end', coords are already in correct order (traveling toward end)
+            }
+            oriented.push({ layerId: layer.id, coords });
+        } else {
+            // Subsequent segments: orient based on which end connects to previous
+            const conn = conns[si - 1]; // connection from prev to this
+            if (conn.theirEnd === 'end') {
+                // Previous connects to our end — we need to reverse so we start from our end
+                coords.reverse();
+            }
+            // If theirEnd === 'start', our start is the entry point, coords already correct
+            oriented.push({ layerId: layer.id, coords });
+        }
+    }
+
+    // Step 5: Find A and B positions in the oriented chain
+    function findPosInOriented(layerId, origVertexIdx) {
+        const origCoord = projectData.layers[layerId].coords[origVertexIdx];
+        for (let si = 0; si < oriented.length; si++) {
+            if (oriented[si].layerId !== layerId) continue;
+            for (let ci = 0; ci < oriented[si].coords.length; ci++) {
+                if (Math.abs(oriented[si].coords[ci][0] - origCoord[0]) < 1e-9 &&
+                    Math.abs(oriented[si].coords[ci][1] - origCoord[1]) < 1e-9) {
+                    return { segIdx: si, localIdx: ci };
                 }
             }
         }
         return null;
     }
 
-    const posA = findInChain(a.layerId, a.vertexIdx);
-    const posB = findInChain(b.layerId, b.vertexIdx);
+    const posA = findPosInOriented(a.layerId, a.vertexIdx);
+    const posB = findPosInOriented(b.layerId, b.vertexIdx);
 
     if (!posA || !posB) {
         const dist = haversineDistance(a.coord[0], a.coord[1], b.coord[0], b.coord[1]);
         return { distance: dist, pathCoords: [a.coord, b.coord], segments: 0 };
     }
 
-    // Ensure posA comes before posB in the chain
+    // Ensure A comes before B
     let pA = posA, pB = posB;
-    let swapped = false;
     if (pA.segIdx > pB.segIdx || (pA.segIdx === pB.segIdx && pA.localIdx > pB.localIdx)) {
         [pA, pB] = [pB, pA];
-        swapped = true;
     }
 
-    // Step 4: Extract coordinates from pA to pB
+    // Step 6: Extract path coordinates from A to B
     let pathCoords = [];
-    let totalDist = 0;
     let segCount = 0;
 
     for (let si = pA.segIdx; si <= pB.segIdx; si++) {
         const seg = oriented[si];
         let fromV = 0, toV = seg.coords.length - 1;
-
         if (si === pA.segIdx) fromV = pA.localIdx;
         if (si === pB.segIdx) toV = pB.localIdx;
-
         const slice = seg.coords.slice(fromV, toV + 1);
         pathCoords = pathCoords.concat(slice);
         segCount++;
     }
 
-    // Calculate distance along the path
+    // Calculate distance
+    let totalDist = 0;
     for (let i = 0; i < pathCoords.length - 1; i++) {
         totalDist += haversineDistance(pathCoords[i][0], pathCoords[i][1], pathCoords[i+1][0], pathCoords[i+1][1]);
     }
@@ -4990,36 +5040,14 @@ function calcCrossSegmentDistance(a, b) {
     return { distance: totalDist, pathCoords, segments: segCount };
 }
 
-// Find common ancestor folder for two folder IDs
-function findCommonAncestorFolder(fIdA, fIdB) {
-    if (fIdA === fIdB) return fIdA;
-    // Build ancestor chains
-    function ancestors(fId) {
-        const chain = [fId];
-        let cur = fId;
-        while (cur) {
-            const f = projectData.folders.find(ff => ff.id === cur);
-            if (f && f.parentId) { chain.push(f.parentId); cur = f.parentId; }
-            else break;
-        }
-        return chain;
-    }
-    const chainA = ancestors(fIdA);
-    const chainB = ancestors(fIdB);
-    for (const fId of chainA) {
-        if (chainB.includes(fId)) return fId;
-    }
-    return null;
-}
-
-// Get all line layers in folder order (depth-first, items order)
+// Get all line layers in folder order (depth-first, items order) — kept for other uses
 function getOrderedLineLayers(folderId) {
     const result = [];
     function recurse(fId) {
         const f = projectData.folders.find(ff => ff.id === fId);
         if (!f) return;
         f.items.forEach(id => {
-            if (projectData.folders.find(ff => ff.id === id)) return; // skip subfolder refs
+            if (projectData.folders.find(ff => ff.id === id)) return;
             const l = projectData.layers[id];
             if (l && l.type === 'line') result.push(l);
         });
