@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<!-- NexiMap KML Studio v2.1 - Ruler polyline tool, consistent folder/subfolder compact color picker -->
+<!-- NexiMap KML Studio v2.2.1 - Draggable vertex dots when layer selected -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NexiMap KML Studio v2.1</title>
+<title>NexiMap KML Studio v2.2.1</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='2' width='28' height='28' rx='4' fill='%230096D6'/%3E%3Cpath d='M8 12L16 8L24 12L16 16Z' fill='white' opacity='0.9'/%3E%3Cpath d='M8 16L16 20L24 16' stroke='white' stroke-width='1.5' fill='none'/%3E%3Cpath d='M8 20L16 24L24 20' stroke='white' stroke-width='1.5' fill='none'/%3E%3C/svg%3E"/>
 <style>
 :root {
@@ -578,16 +578,20 @@ header {
     width: 8px; height: 8px; border-radius: 50%;
     background: rgba(255,255,255,0.85); border: 1.5px solid rgba(0,0,0,0.5);
     box-shadow: 0 0 3px rgba(0,0,0,0.3); z-index: 600 !important;
-    cursor: crosshair; transition: transform 0.1s;
+    transition: transform 0.1s;
 }
 .vertex-dot:hover { transform: scale(1.8); background: #fbbf24; border-color: #f59e0b; }
+.leaflet-container:not(.measure-cursor) .vertex-dot { cursor: grab; }
+.leaflet-container:not(.measure-cursor) .vertex-dot:active { cursor: grabbing; }
 .vertex-dot-end {
     width: 10px; height: 10px; border-radius: 50%;
     background: rgba(255,255,255,0.95); border: 2px solid rgba(0,0,0,0.6);
     box-shadow: 0 0 4px rgba(0,0,0,0.4); z-index: 650 !important;
-    cursor: crosshair; transition: transform 0.1s;
+    transition: transform 0.1s;
 }
 .vertex-dot-end:hover { transform: scale(1.8); background: #fbbf24; border-color: #f59e0b; }
+.leaflet-container:not(.measure-cursor) .vertex-dot-end { cursor: grab; }
+.leaflet-container:not(.measure-cursor) .vertex-dot-end:active { cursor: grabbing; }
 
 /* Measure snap preview dot */
 .measure-snap-dot {
@@ -790,7 +794,7 @@ header {
     <div class="app-logo">
         <svg width="20" height="20" viewBox="0 0 32 32"><rect x="2" y="2" width="28" height="28" rx="4" fill="#0096D6"/><path d="M8 12L16 8L24 12L16 16Z" fill="white" opacity="0.9"/><path d="M8 16L16 20L24 16" stroke="white" stroke-width="1.5" fill="none"/><path d="M8 20L16 24L24 20" stroke="white" stroke-width="1.5" fill="none"/></svg>
         NexiMap KML Studio
-        <span class="ver">v2.1</span>
+        <span class="ver">v2.2.1</span>
     </div>
 
     <!-- File Menu -->
@@ -1103,14 +1107,14 @@ header {
 <!-- Menu dropdowns (body-level for z-index above Leaflet) -->
 <div class="menu-dropdown" id="fileMenu">
     <button class="menu-dropdown-item" onclick="openKMLFile(); closeMenus();">
-        📂 Open KML… <span class="shortcut">Ctrl+O</span>
+        📂 Open KML/KMZ… <span class="shortcut">Ctrl+O</span>
     </button>
     <button class="menu-dropdown-item" onclick="openGeoJSONFile(); closeMenus();">
         📂 Open GeoJSON…
     </button>
     <div class="menu-sep"></div>
     <button class="menu-dropdown-item" onclick="openMergeFiles(); closeMenus();">
-        📑 Merge multiple KMLs…
+        📑 Merge KML/KMZ files…
     </button>
     <div class="menu-sep"></div>
     <button class="menu-dropdown-item" onclick="fileSave(); closeMenus();">
@@ -1201,8 +1205,8 @@ header {
     </button>
 </div>
 
-<input type="file" id="fileInput" accept=".kml" onchange="handleFileOpen(event)">
-<input type="file" id="mergeFileInput" accept=".kml" multiple onchange="handleMergeFiles(event)">
+<input type="file" id="fileInput" accept=".kml,.kmz" onchange="handleFileOpen(event)">
+<input type="file" id="mergeFileInput" accept=".kml,.kmz" multiple onchange="handleMergeFiles(event)">
 <input type="file" id="geojsonInput" accept=".geojson,.json" onchange="handleGeoJSONOpen(event)">
 <input type="file" id="logoInput" accept="image/*" onchange="handleLogoUpload(event)">
 
@@ -1278,12 +1282,27 @@ async function loadLeaflet() {
     return false;
 }
 
+async function loadJSZip() {
+    const cdns = [
+        'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js',
+        'https://unpkg.com/jszip@3.10.1/dist/jszip.min.js',
+        'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js'
+    ];
+    for (const url of cdns) {
+        try { await loadScript(url); if (typeof JSZip !== 'undefined') return true; }
+        catch(e) { console.warn('JSZip CDN failed:', url); }
+    }
+    return false;
+}
+
 (async function() {
     const ok = await loadLeaflet();
     if (!ok) {
         document.getElementById('emptyState').innerHTML = '<p style="color:#ef4444;font-size:14px;padding:30px;">Failed to load Leaflet map library.<br>Check internet connection and reload.</p>';
         return;
     }
+    // Load JSZip for KMZ support (non-blocking — KMZ features just warn if not loaded)
+    await loadJSZip();
     initApp();
 })();
 
@@ -1353,36 +1372,59 @@ window.openKMLFile = () => document.getElementById('fileInput').click();
 window.openMergeFiles = () => document.getElementById('mergeFileInput').click();
 window.openGeoJSONFile = () => document.getElementById('geojsonInput').click();
 
-window.handleFileOpen = function(e) {
+window.handleFileOpen = async function(e) {
     const file = e.target.files[0];
     if (!file) return;
     currentFileName = file.name;
-    currentFileHandle = null; // Reset handle for picker-opened files
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-        try { importKML(ev.target.result, file.name); toast('Opened ' + file.name, 'success'); }
-        catch (err) { toast('Error: ' + err.message, 'error'); }
-    };
-    reader.readAsText(file);
+    currentFileHandle = null;
+    currentFileIsKMZ = file.name.toLowerCase().endsWith('.kmz');
+
+    if (currentFileIsKMZ) {
+        try {
+            const kmlStr = await extractKMLFromKMZ(file);
+            importKML(kmlStr, file.name);
+            toast('Opened KMZ: ' + file.name, 'success');
+        } catch (err) { toast('Error opening KMZ: ' + err.message, 'error'); }
+    } else {
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            try { importKML(ev.target.result, file.name); toast('Opened ' + file.name, 'success'); }
+            catch (err) { toast('Error: ' + err.message, 'error'); }
+        };
+        reader.readAsText(file);
+    }
     e.target.value = '';
 };
 
-window.handleMergeFiles = function(e) {
+window.handleMergeFiles = async function(e) {
     const files = Array.from(e.target.files);
     if (!files.length) return;
     let loaded = 0;
-    files.forEach(file => {
-        const reader = new FileReader();
-        reader.onload = (ev) => {
-            try { importKML(ev.target.result, file.name); }
-            catch (err) { toast('Error in ' + file.name + ': ' + err.message, 'error'); }
-            loaded++;
-            if (loaded === files.length) toast('Merged ' + files.length + ' KML files', 'success');
-        };
-        reader.readAsText(file);
-    });
+    for (const file of files) {
+        try {
+            let kmlStr;
+            if (file.name.toLowerCase().endsWith('.kmz')) {
+                kmlStr = await extractKMLFromKMZ(file);
+            } else {
+                kmlStr = await readFileAsText(file);
+            }
+            importKML(kmlStr, file.name);
+        } catch (err) { toast('Error in ' + file.name + ': ' + err.message, 'error'); }
+        loaded++;
+    }
+    if (loaded > 0) { renderAll(); toast(loaded + ' file(s) merged', 'success'); updateStatus(); }
     e.target.value = '';
 };
+
+// Helper: read file as text (Promise)
+function readFileAsText(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (ev) => resolve(ev.target.result);
+        reader.onerror = () => reject(new Error('Failed to read file'));
+        reader.readAsText(file);
+    });
+}
 
 window.handleGeoJSONOpen = function(e) {
     const file = e.target.files[0];
@@ -1399,22 +1441,26 @@ window.handleGeoJSONOpen = function(e) {
 // Drag-and-drop
 const mapContainer = document.getElementById('mapContainer');
 mapContainer.addEventListener('dragover', (e) => { e.preventDefault(); });
-mapContainer.addEventListener('drop', (e) => {
+mapContainer.addEventListener('drop', async (e) => {
     e.preventDefault();
-    Array.from(e.dataTransfer.files).forEach(file => {
-        const reader = new FileReader();
-        reader.onload = (ev) => {
-            try {
-                if (file.name.endsWith('.geojson') || file.name.endsWith('.json')) {
-                    importGeoJSON(ev.target.result, file.name);
-                } else if (file.name.endsWith('.kml')) {
-                    importKML(ev.target.result, file.name);
-                }
+    for (const file of Array.from(e.dataTransfer.files)) {
+        try {
+            const fname = file.name.toLowerCase();
+            if (fname.endsWith('.kmz')) {
+                const kmlStr = await extractKMLFromKMZ(file);
+                importKML(kmlStr, file.name);
+                toast('Loaded KMZ: ' + file.name, 'success');
+            } else if (fname.endsWith('.geojson') || fname.endsWith('.json')) {
+                const txt = await readFileAsText(file);
+                importGeoJSON(txt, file.name);
                 toast('Loaded ' + file.name, 'success');
-            } catch (err) { toast('Error: ' + err.message, 'error'); }
-        };
-        reader.readAsText(file);
-    });
+            } else if (fname.endsWith('.kml')) {
+                const txt = await readFileAsText(file);
+                importKML(txt, file.name);
+                toast('Loaded ' + file.name, 'success');
+            }
+        } catch (err) { toast('Error: ' + err.message, 'error'); }
+    }
 });
 
 // === KML PARSER (robust) ===
@@ -1875,6 +1921,9 @@ function renderVertexDots() {
         // Don't show dots if edit mode is showing draggable markers for this layer
         if (editMode && layer.id === selectedLayerId) return;
 
+        // Dots are draggable when: layer is selected, NOT in measure mode, NOT in edit mode
+        const canDrag = !measureMode && !editMode && selectedLayerIds.has(layer.id);
+
         layer.coords.forEach((coord, idx) => {
             const isEnd = idx === 0 || idx === layer.coords.length - 1;
             const icon = L.divIcon({
@@ -1882,7 +1931,7 @@ function renderVertexDots() {
                 iconSize: isEnd ? [10, 10] : [8, 8],
                 iconAnchor: isEnd ? [5, 5] : [4, 4]
             });
-            const marker = L.marker(coord, { icon, interactive: true, zIndexOffset: 600 }).addTo(map);
+            const marker = L.marker(coord, { icon, interactive: true, draggable: canDrag, zIndexOffset: 600 }).addTo(map);
 
             // In measure mode, clicking a dot triggers measure
             marker.on('click', (e) => {
@@ -1891,6 +1940,24 @@ function renderVertexDots() {
                     handleMeasureClick(e.latlng, idx, layer.id);
                 }
             });
+
+            // Draggable: update layer coords in real-time
+            if (canDrag) {
+                marker.on('dragstart', () => {
+                    map.dragging.disable();
+                });
+                marker.on('drag', (e) => {
+                    const ll = e.target.getLatLng();
+                    layer.coords[idx] = [ll.lat, ll.lng];
+                    if (layer.leafletLayer) layer.leafletLayer.setLatLngs(layer.coords);
+                });
+                marker.on('dragend', (e) => {
+                    map.dragging.enable();
+                    const ll = e.target.getLatLng();
+                    layer.coords[idx] = [ll.lat, ll.lng];
+                    updatePropsPanel(); updateStatus();
+                });
+            }
 
             vertexDotMarkers.push(marker);
         });
@@ -2834,11 +2901,17 @@ window.clearProject = function() {
 // === EXPORT KML ===
 // === SAVE (v1.9): writes to same file handle if available, else falls back to Save As ===
 window.fileSave = async function() {
-    const kml = buildKML();
     if (currentFileHandle) {
         try {
+            const isKmz = currentFileName.toLowerCase().endsWith('.kmz');
+            let data;
+            if (isKmz) {
+                data = await buildKMZBlob();
+            } else {
+                data = buildKML();
+            }
             const writable = await currentFileHandle.createWritable();
-            await writable.write(kml);
+            await writable.write(data);
             await writable.close();
             toast('Saved to ' + currentFileName, 'success');
             return;
@@ -2852,32 +2925,57 @@ window.fileSave = async function() {
 
 // === SAVE AS (v1.9): always prompts for filename / location ===
 window.fileSaveAs = async function() {
-    const kml = buildKML();
     // Try File System Access API (Chrome/Edge)
     if (window.showSaveFilePicker) {
         try {
             const opts = {
                 suggestedName: currentFileName,
-                types: [{ description: 'KML Files', accept: { 'application/vnd.google-earth.kml+xml': ['.kml'] } }]
+                types: [
+                    { description: 'KML Files', accept: { 'application/vnd.google-earth.kml+xml': ['.kml'] } },
+                    { description: 'KMZ Files (compressed)', accept: { 'application/vnd.google-earth.kmz': ['.kmz'] } }
+                ]
             };
             const handle = await window.showSaveFilePicker(opts);
+            const isKmz = handle.name.toLowerCase().endsWith('.kmz');
+            let data;
+            if (isKmz) {
+                data = await buildKMZBlob();
+            } else {
+                data = buildKML();
+            }
             const writable = await handle.createWritable();
-            await writable.write(kml);
+            await writable.write(data);
             await writable.close();
             currentFileHandle = handle;
             currentFileName = handle.name;
+            currentFileIsKMZ = isKmz;
             toast('Saved as ' + currentFileName, 'success');
             return;
         } catch (err) {
-            if (err.name === 'AbortError') return; // User cancelled
+            if (err.name === 'AbortError') return;
         }
     }
     // Fallback: prompt for name then download
-    const name = prompt('Save file as:', currentFileName);
+    const name = prompt('Save file as (.kml or .kmz):', currentFileName);
     if (!name) return;
-    currentFileName = name.endsWith('.kml') ? name : name + '.kml';
-    downloadFile(kml, currentFileName, 'application/vnd.google-earth.kml+xml');
-    toast('Saved as ' + currentFileName, 'success');
+    const isKmz = name.toLowerCase().endsWith('.kmz');
+    if (isKmz) {
+        currentFileName = name;
+        try {
+            const blob = await buildKMZBlob();
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = currentFileName;
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            currentFileIsKMZ = true;
+            toast('Saved as ' + currentFileName, 'success');
+        } catch (err) { toast('KMZ save failed: ' + err.message, 'error'); }
+    } else {
+        currentFileName = name.endsWith('.kml') ? name : name + '.kml';
+        currentFileIsKMZ = false;
+        downloadFile(buildKML(), currentFileName, 'application/vnd.google-earth.kml+xml');
+        toast('Saved as ' + currentFileName, 'success');
+    }
 };
 
 // Keep old name for backwards compat (keyboard shortcut)
@@ -3899,6 +3997,39 @@ map.on('mousemove', (e) => {
         color: '#f59e0b', weight: 2, opacity: 0.5, dashArray: '4,4'
     }).addTo(map);
 });
+
+
+// === KMZ SUPPORT (v2.2) ===
+let currentFileIsKMZ = false;
+
+// Extract KML text from a KMZ file (which is a ZIP containing doc.kml or *.kml)
+async function extractKMLFromKMZ(file) {
+    if (typeof JSZip === 'undefined') {
+        throw new Error('JSZip library not loaded. Check your internet connection and reload.');
+    }
+    const buf = await file.arrayBuffer();
+    const zip = await JSZip.loadAsync(buf);
+    // Look for doc.kml first, then any .kml file
+    let kmlFile = zip.file('doc.kml');
+    if (!kmlFile) {
+        // Search for any .kml file in the root or subdirectories
+        const kmlFiles = zip.file(/\.kml$/i);
+        if (kmlFiles.length > 0) kmlFile = kmlFiles[0];
+    }
+    if (!kmlFile) throw new Error('No KML file found inside KMZ archive');
+    return await kmlFile.async('string');
+}
+
+// Build a KMZ blob (ZIP containing doc.kml)
+async function buildKMZBlob() {
+    if (typeof JSZip === 'undefined') {
+        throw new Error('JSZip library not loaded. Check your internet connection and reload.');
+    }
+    const kml = buildKML();
+    const zip = new JSZip();
+    zip.file('doc.kml', kml);
+    return await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } });
+}
 
 // === HAVERSINE DISTANCE UTILITY ===
 function haversineDistance(lat1, lon1, lat2, lon2) {
