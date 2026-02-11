@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<!-- NexiMap KML Studio v2.9.9 - Optimized topology for large KMZ files (10K+ nodes) -->
+<!-- NexiMap KML Studio v3.0.0 - Simplified topology with 5-pass reduction and island bridging -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NexiMap KML Studio v2.9.9</title>
+<title>NexiMap KML Studio v3.0.0</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='2' width='28' height='28' rx='4' fill='%230096D6'/%3E%3Cpath d='M8 12L16 8L24 12L16 16Z' fill='white' opacity='0.9'/%3E%3Cpath d='M8 16L16 20L24 16' stroke='white' stroke-width='1.5' fill='none'/%3E%3Cpath d='M8 20L16 24L24 20' stroke='white' stroke-width='1.5' fill='none'/%3E%3C/svg%3E"/>
 <style>
 :root {
@@ -1028,7 +1028,7 @@ header {
     <div class="app-logo">
         <svg width="20" height="20" viewBox="0 0 32 32"><rect x="2" y="2" width="28" height="28" rx="4" fill="#0096D6"/><path d="M8 12L16 8L24 12L16 16Z" fill="white" opacity="0.9"/><path d="M8 16L16 20L24 16" stroke="white" stroke-width="1.5" fill="none"/><path d="M8 20L16 24L24 20" stroke="white" stroke-width="1.5" fill="none"/></svg>
         NexiMap KML Studio
-        <span class="ver">v2.9.9</span>
+        <span class="ver">v3.0.0</span>
     </div>
 
     <!-- File Menu -->
@@ -1211,6 +1211,7 @@ header {
                 <canvas id="topoCanvas"></canvas>
                 <div class="topo-legend">
                     <div class="topo-legend-item"><div class="topo-legend-line" style="background:#0096D6;"></div><span>Cable path (merged)</span></div>
+                    <div class="topo-legend-item"><div class="topo-legend-line" style="background:#e67e22;border:1px dashed #c0392b;height:1px;"></div><span>Bridge (island link)</span></div>
                     <div class="topo-legend-item"><svg width="12" height="12"><circle cx="6" cy="6" r="5" fill="#10b981" stroke="white" stroke-width="1.5"/></svg><span>Terminal</span></div>
                     <div class="topo-legend-item"><svg width="12" height="12"><circle cx="6" cy="6" r="5" fill="#ef4444" stroke="white" stroke-width="1.5"/></svg><span>Hub / Branch</span></div>
                 </div>
@@ -5261,7 +5262,7 @@ window.showTopologyDiagram = function() {
     }
 
     // ─── PASS 1: Cluster endpoints, walk chains ───
-    const SNAP = 0.0005;
+    const SNAP = 0.02; // ~2km snap (handles GPS/digitization offsets)
     const epGrid = new Map();
     const allEps = [];
     for (let li = 0; li < allLines.length; li++) {
@@ -5485,8 +5486,56 @@ window.showTopologyDiagram = function() {
         tEdges.push({ from: fi, to: ti, type: 'internal', dist: e.dist, segCount: e.segCount, pathCount: e.count, color: e.color, label: lbl });
     }
 
+    // ─── PASS 5: Bridge disconnected components (islands) ───
+    // If hub-level graph has multiple components, connect them with dashed gap edges
+    const ufH = new Int32Array(tNodes.length);
+    for (let i = 0; i < tNodes.length; i++) ufH[i] = i;
+    function ufHFind(x) { while (ufH[x] !== x) { ufH[x] = ufH[ufH[x]]; x = ufH[x]; } return x; }
+    function ufHUnion(a, b) { a = ufHFind(a); b = ufHFind(b); if (a === b) return false; ufH[b] = a; return true; }
+    for (const e of tEdges) ufHUnion(e.from, e.to);
+
+    let numComp = new Set(Array.from({length: tNodes.length}, (_, i) => ufHFind(i))).size;
+    if (numComp > 1) {
+        // Find shortest gap between each pair of components using hub coords
+        const compNodes = new Map();
+        for (let i = 0; i < tNodes.length; i++) {
+            const r = ufHFind(i);
+            if (!compNodes.has(r)) compNodes.set(r, []);
+            compNodes.get(r).push(i);
+        }
+        const compRoots = Array.from(compNodes.keys());
+        const bridges = [];
+        for (let ci = 0; ci < compRoots.length; ci++) {
+            for (let cj = ci + 1; cj < compRoots.length; cj++) {
+                let bestD = Infinity, bestI = -1, bestJ = -1;
+                for (const a of compNodes.get(compRoots[ci])) {
+                    for (const b of compNodes.get(compRoots[cj])) {
+                        const d = fastKm([tNodes[a].geoLat, tNodes[a].geoLng], [tNodes[b].geoLat, tNodes[b].geoLng]);
+                        if (d < bestD) { bestD = d; bestI = a; bestJ = b; }
+                    }
+                }
+                if (bestI >= 0) bridges.push({ i: bestI, j: bestJ, d: bestD });
+            }
+        }
+        bridges.sort((a, b) => a.d - b.d);
+        let bridgeCount = 0;
+        for (const br of bridges) {
+            if (ufHFind(br.i) !== ufHFind(br.j)) {
+                tEdges.push({
+                    from: br.i, to: br.j, type: 'gap',
+                    dist: br.d, segCount: 0, pathCount: 0,
+                    color: '#e67e22', label: 'bridge ' + br.d.toFixed(1) + 'km'
+                });
+                ufHUnion(br.i, br.j);
+                bridgeCount++;
+            }
+        }
+        if (bridgeCount > 0) numComp = new Set(Array.from({length: tNodes.length}, (_, i) => ufHFind(i))).size;
+    }
+
     const elapsed = (performance.now() - t0).toFixed(0);
-    toast('Topology: ' + allLines.length + ' seg \u2192 ' + tNodes.length + ' nodes, ' + tEdges.length + ' edges (' + elapsed + 'ms)', 'success');
+    const compNote = numComp > 1 ? ' [' + numComp + ' islands]' : '';
+    toast('Topology: ' + allLines.length + ' seg \u2192 ' + tNodes.length + ' nodes, ' + tEdges.length + ' edges' + compNote + ' (' + elapsed + 'ms)', 'success');
 
     if (tNodes.length === 0) { toast('No topology nodes after simplification', 'info'); return; }
 
