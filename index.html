@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<!-- NexiMap KML Studio v3.0.6 - Simplified topology with 5-pass reduction and island bridging -->
+<!-- NexiMap KML Studio v3.0.7 - Chain segments in simplified GeoJSON export -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NexiMap KML Studio v3.0.6</title>
+<title>NexiMap KML Studio v3.0.7</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='2' width='28' height='28' rx='4' fill='%230096D6'/%3E%3Cpath d='M8 12L16 8L24 12L16 16Z' fill='white' opacity='0.9'/%3E%3Cpath d='M8 16L16 20L24 16' stroke='white' stroke-width='1.5' fill='none'/%3E%3Cpath d='M8 20L16 24L24 20' stroke='white' stroke-width='1.5' fill='none'/%3E%3C/svg%3E"/>
 <style>
 :root {
@@ -2964,6 +2964,114 @@ window.undoSimplify = function() {
     toast('Restored original coordinates', 'info');
 };
 
+// =========================================================================
+// SEGMENT CHAINING FOR SIMPLIFIED EXPORT
+// =========================================================================
+// Chains an array of simplified LineString coordinate arrays into connected
+// paths by matching endpoints. Uses greedy nearest-neighbor with a snap
+// tolerance. Runs AFTER Douglas-Peucker so it operates on ~300 points.
+//
+// Input:  [{name, coords:[[lat,lon],...], color, width, opacity}, ...]
+// Output: array of chained segments (fewer, longer LineStrings)
+//
+// To disable: comment out chainSimplifiedSegments() calls in
+// exportSimplifiedGeoJSON and buildSimplifiedGeoJSONForLayers.
+// =========================================================================
+function chainSimplifiedSegments(segments) {
+    if (!segments || segments.length <= 1) return segments;
+
+    // Internal coords are [lat, lon]
+    const cosLat = Math.cos((segments[0].coords[0][0]) * Math.PI / 180);
+    function distSq(a, b) {
+        const dlat = a[0] - b[0];
+        const dlon = (a[1] - b[1]) * cosLat;
+        return dlat * dlat + dlon * dlon;
+    }
+
+    // Snap tolerance: ~2km in degrees (matches topology SNAP=0.02)
+    const SNAP_SQ = 0.02 * 0.02;
+
+    const segs = segments.map((s, i) => ({
+        idx: i, name: s.name, coords: s.coords,
+        color: s.color, width: s.width, opacity: s.opacity,
+        start: s.coords[0], end: s.coords[s.coords.length - 1],
+        used: false
+    }));
+
+    const chains = [];
+
+    while (true) {
+        // Pick unused seed (prefer longest)
+        let seedIdx = -1, maxPts = 0;
+        for (let i = 0; i < segs.length; i++) {
+            if (!segs[i].used && segs[i].coords.length > maxPts) {
+                maxPts = segs[i].coords.length;
+                seedIdx = i;
+            }
+        }
+        if (seedIdx < 0) break;
+
+        const seed = segs[seedIdx];
+        seed.used = true;
+        let chain = [...seed.coords];
+        let chainName = seed.name;
+        let chainColor = seed.color;
+        let chainWidth = seed.width;
+        let chainOpacity = seed.opacity;
+
+        // Extend from both ends
+        let extended = true;
+        while (extended) {
+            extended = false;
+            const chainEnd = chain[chain.length - 1];
+            const chainStart = chain[0];
+
+            // Best match to extend from chain END
+            let beIdx = -1, beDist = Infinity, beRev = false;
+            for (let i = 0; i < segs.length; i++) {
+                if (segs[i].used) continue;
+                const dS = distSq(chainEnd, segs[i].start);
+                const dE = distSq(chainEnd, segs[i].end);
+                const m = Math.min(dS, dE);
+                if (m < beDist) { beDist = m; beIdx = i; beRev = dE < dS; }
+            }
+
+            // Best match to extend from chain START
+            let bsIdx = -1, bsDist = Infinity, bsRev = false;
+            for (let i = 0; i < segs.length; i++) {
+                if (segs[i].used) continue;
+                const dE = distSq(chainStart, segs[i].end);
+                const dS = distSq(chainStart, segs[i].start);
+                const m = Math.min(dE, dS);
+                if (m < bsDist) { bsDist = m; bsIdx = i; bsRev = dS < dE; }
+            }
+
+            // Extend the closer end (within snap tolerance only)
+            if (beIdx >= 0 && beDist <= SNAP_SQ && (beDist <= bsDist || bsDist > SNAP_SQ)) {
+                const seg = segs[beIdx];
+                const coords = beRev ? [...seg.coords].reverse() : seg.coords;
+                const skip = (distSq(chain[chain.length - 1], coords[0]) < SNAP_SQ) ? 1 : 0;
+                for (let j = skip; j < coords.length; j++) chain.push(coords[j]);
+                seg.used = true;
+                extended = true;
+            } else if (bsIdx >= 0 && bsDist <= SNAP_SQ) {
+                const seg = segs[bsIdx];
+                const coords = bsRev ? [...seg.coords].reverse() : seg.coords;
+                const trim = (distSq(chain[0], coords[coords.length - 1]) < SNAP_SQ) ? 1 : 0;
+                chain = [...coords.slice(0, coords.length - trim), ...chain];
+                seg.used = true;
+                extended = true;
+            }
+        }
+
+        chains.push({ name: chainName, coords: chain, color: chainColor, width: chainWidth, opacity: chainOpacity });
+    }
+
+    console.log('[CHAIN] ' + segments.length + ' segments -> ' + chains.length + ' chains (' +
+        chains.reduce((s, c) => s + c.coords.length, 0) + ' pts)');
+    return chains;
+}
+
 // === EDIT MODE ===
 window.toggleEditMode = function() {
     // Deactivate other modes
@@ -3542,18 +3650,27 @@ window.exportSimplifiedGeoJSON = function() {
         tolerance = best;
     }
 
+    // Simplify each line independently first
+    const simplifiedSegs = lines.map(l => ({
+        name: l.name,
+        coords: tolerance > 0 ? douglasPeucker(l.coords, tolerance) : l.coords,
+        color: l.color, width: l.width, opacity: l.opacity
+    }));
+
+    // Chain simplified segments into connected paths (see SEGMENT CHAINING section)
+    const chained = chainSimplifiedSegments(simplifiedSegs);
+
     const features = [];
     let totalSimplified = 0;
 
-    lines.forEach(l => {
-        const simplified = tolerance > 0 ? douglasPeucker(l.coords, tolerance) : l.coords;
-        totalSimplified += simplified.length;
+    chained.forEach(c => {
+        totalSimplified += c.coords.length;
         features.push({
             type: 'Feature',
-            properties: { name: l.name, stroke: l.color, 'stroke-width': l.width, 'stroke-opacity': l.opacity, layerType: 'line' },
+            properties: { name: c.name, stroke: c.color, 'stroke-width': c.width, 'stroke-opacity': c.opacity, layerType: 'line' },
             geometry: {
                 type: 'LineString',
-                coordinates: simplified.map(c => [Math.round(c[1] * 100000) / 100000, Math.round(c[0] * 100000) / 100000])
+                coordinates: c.coords.map(p => [Math.round(p[1] * 100000) / 100000, Math.round(p[0] * 100000) / 100000])
             }
         });
     });
@@ -3577,7 +3694,7 @@ window.exportSimplifiedGeoJSON = function() {
     downloadFile(jsonStr, name, 'application/geo+json');
 
     const reduction = totalPts > 0 ? Math.round((1 - totalSimplified / totalPts) * 100) : 0;
-    toast(`Exported ${features.length} lines: ${totalPts} → ${totalSimplified} pts (${reduction}% reduction)`, 'success');
+    toast(`Exported ${chained.length} chains (from ${lines.length} segments): ${totalPts} → ${totalSimplified} pts (${reduction}% reduction)`, 'success');
 };
 
 function getProjectName() {
@@ -3646,13 +3763,19 @@ function buildSimplifiedGeoJSONForLayers(layerIds) {
         }
         tol = best;
     }
+    // Simplify then chain (see SEGMENT CHAINING section)
+    const simplifiedSegs = lines.map(l => ({
+        name: l.name, coords: tol > 0 ? douglasPeucker(l.coords, tol) : l.coords,
+        color: l.color, width: l.width, opacity: l.opacity
+    }));
+    const chained = chainSimplifiedSegments(simplifiedSegs);
+
     const features = [];
-    lines.forEach(l => {
-        const simp = tol > 0 ? douglasPeucker(l.coords, tol) : l.coords;
+    chained.forEach(c => {
         features.push({
             type: 'Feature',
-            properties: { name: l.name, stroke: l.color, 'stroke-width': l.width, 'stroke-opacity': l.opacity },
-            geometry: { type: 'LineString', coordinates: simp.map(c => [Math.round(c[1]*1e5)/1e5, Math.round(c[0]*1e5)/1e5]) }
+            properties: { name: c.name, stroke: c.color, 'stroke-width': c.width, 'stroke-opacity': c.opacity },
+            geometry: { type: 'LineString', coordinates: c.coords.map(p => [Math.round(p[1]*1e5)/1e5, Math.round(p[0]*1e5)/1e5]) }
         });
     });
     pins.forEach(l => {
