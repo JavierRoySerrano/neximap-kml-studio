@@ -1038,7 +1038,7 @@ header {
     <div class="app-logo">
         <svg width="20" height="20" viewBox="0 0 32 32"><rect x="2" y="2" width="28" height="28" rx="4" fill="#0096D6"/><path d="M8 12L16 8L24 12L16 16Z" fill="white" opacity="0.9"/><path d="M8 16L16 20L24 16" stroke="white" stroke-width="1.5" fill="none"/><path d="M8 20L16 24L24 20" stroke="white" stroke-width="1.5" fill="none"/></svg>
         NexiMap KML Studio
-        <span class="ver">v3.0.6</span>
+        <span class="ver">v3.0.8</span>
     </div>
 
     <!-- File Menu -->
@@ -6635,7 +6635,11 @@ window.ctxExportAs = async function(format) {
         toast('Exported ' + layerIds.length + ' layer(s) as GeoJSON', 'success');
     } else if (format === 'simplified') {
         const gj = buildSimplifiedGeoJSONForLayers(layerIds);
-        downloadFile(gj, exportName + '_simplified.geojson', 'application/geo+json');
+        const defaultFn = exportName + '_simplified.geojson';
+        const fn = prompt('Export filename:', defaultFn);
+        if (!fn) return;
+        const finalFn = fn.endsWith('.geojson') ? fn : fn + '.geojson';
+        downloadFile(gj, finalFn, 'application/geo+json');
         toast('Exported simplified GeoJSON', 'success');
     }
     ctxTargetFolderId = null;
