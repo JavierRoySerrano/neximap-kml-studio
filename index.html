@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<!-- NexiMap KML Studio v3.0.7 - Chain segments in simplified GeoJSON export -->
+<!-- NexiMap KML Studio v3.0.8 - Dedup + editable export name in simplified GeoJSON export -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NexiMap KML Studio v3.0.7</title>
+<title>NexiMap KML Studio v3.0.8</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='2' width='28' height='28' rx='4' fill='%230096D6'/%3E%3Cpath d='M8 12L16 8L24 12L16 16Z' fill='white' opacity='0.9'/%3E%3Cpath d='M8 16L16 20L24 16' stroke='white' stroke-width='1.5' fill='none'/%3E%3Cpath d='M8 20L16 24L24 20' stroke='white' stroke-width='1.5' fill='none'/%3E%3C/svg%3E"/>
 <style>
 :root {
@@ -2965,11 +2965,13 @@ window.undoSimplify = function() {
 };
 
 // =========================================================================
-// SEGMENT CHAINING FOR SIMPLIFIED EXPORT
+// SEGMENT CHAINING FOR SIMPLIFIED EXPORT (v3.0.8)
 // =========================================================================
-// Chains an array of simplified LineString coordinate arrays into connected
-// paths by matching endpoints. Uses greedy nearest-neighbor with a snap
-// tolerance. Runs AFTER Douglas-Peucker so it operates on ~300 points.
+// 1. Deduplicates exact-copy geometries (common when KMZ has repeated folders)
+// 2. Builds endpoint degree map to detect branching junctions
+// 3. Only chains through degree-2 endpoints (linear continuation)
+//    Stops at degree-3+ junctions (branches) to avoid stitching local
+//    wiring networks into the main submarine path
 //
 // Input:  [{name, coords:[[lat,lon],...], color, width, opacity}, ...]
 // Output: array of chained segments (fewer, longer LineStrings)
@@ -2980,8 +2982,22 @@ window.undoSimplify = function() {
 function chainSimplifiedSegments(segments) {
     if (!segments || segments.length <= 1) return segments;
 
+    // --- STEP 1: Deduplicate exact-copy geometries ---
+    const seen = new Set();
+    const unique = [];
+    for (const s of segments) {
+        const key = s.coords.map(c => c[0].toFixed(5) + ',' + c[1].toFixed(5)).join('|');
+        if (!seen.has(key)) {
+            seen.add(key);
+            unique.push(s);
+        }
+    }
+    const dedupRemoved = segments.length - unique.length;
+    if (dedupRemoved > 0) console.log('[CHAIN] Dedup: removed ' + dedupRemoved + ' duplicate geometries');
+    if (unique.length <= 1) return unique;
+
     // Internal coords are [lat, lon]
-    const cosLat = Math.cos((segments[0].coords[0][0]) * Math.PI / 180);
+    const cosLat = Math.cos((unique[0].coords[0][0]) * Math.PI / 180);
     function distSq(a, b) {
         const dlat = a[0] - b[0];
         const dlon = (a[1] - b[1]) * cosLat;
@@ -2989,15 +3005,46 @@ function chainSimplifiedSegments(segments) {
     }
 
     // Snap tolerance: ~2km in degrees (matches topology SNAP=0.02)
-    const SNAP_SQ = 0.02 * 0.02;
+    const SNAP = 0.02;
+    const SNAP_SQ = SNAP * SNAP;
 
-    const segs = segments.map((s, i) => ({
+    const segs = unique.map((s, i) => ({
         idx: i, name: s.name, coords: s.coords,
         color: s.color, width: s.width, opacity: s.opacity,
         start: s.coords[0], end: s.coords[s.coords.length - 1],
         used: false
     }));
 
+    // --- STEP 2: Build endpoint degree map ---
+    // Grid-based clustering of endpoints to find junctions
+    const epGrid = new Map();
+    function gridKey(c) { return Math.floor(c[0] / SNAP) + ',' + Math.floor(c[1] / SNAP); }
+
+    for (const seg of segs) {
+        for (const ep of [seg.start, seg.end]) {
+            const gk = gridKey(ep);
+            if (!epGrid.has(gk)) epGrid.set(gk, []);
+            epGrid.get(gk).push(ep);
+        }
+    }
+
+    // Count how many segment-endpoints cluster near a given point
+    function junctionDegree(pt) {
+        const gx = Math.floor(pt[0] / SNAP), gy = Math.floor(pt[1] / SNAP);
+        let count = 0;
+        for (let dx = -1; dx <= 1; dx++) {
+            for (let dy = -1; dy <= 1; dy++) {
+                const cell = epGrid.get((gx+dx) + ',' + (gy+dy));
+                if (!cell) continue;
+                for (const ep of cell) {
+                    if (Math.abs(pt[0] - ep[0]) < SNAP && Math.abs(pt[1] - ep[1]) < SNAP) count++;
+                }
+            }
+        }
+        return count;
+    }
+
+    // --- STEP 3: Chain segments, stopping at branching junctions ---
     const chains = [];
 
     while (true) {
@@ -3019,55 +3066,62 @@ function chainSimplifiedSegments(segments) {
         let chainWidth = seed.width;
         let chainOpacity = seed.opacity;
 
-        // Extend from both ends
+        // Extend from both ends, but STOP at branching junctions (degree > 2)
         let extended = true;
         while (extended) {
             extended = false;
             const chainEnd = chain[chain.length - 1];
             const chainStart = chain[0];
 
-            // Best match to extend from chain END
-            let beIdx = -1, beDist = Infinity, beRev = false;
-            for (let i = 0; i < segs.length; i++) {
-                if (segs[i].used) continue;
-                const dS = distSq(chainEnd, segs[i].start);
-                const dE = distSq(chainEnd, segs[i].end);
-                const m = Math.min(dS, dE);
-                if (m < beDist) { beDist = m; beIdx = i; beRev = dE < dS; }
+            // Check if chain END is at a branching junction (degree > 2)
+            const endDeg = junctionDegree(chainEnd);
+            if (endDeg <= 2) {
+                let beIdx = -1, beDist = Infinity, beRev = false;
+                for (let i = 0; i < segs.length; i++) {
+                    if (segs[i].used) continue;
+                    const dS = distSq(chainEnd, segs[i].start);
+                    const dE = distSq(chainEnd, segs[i].end);
+                    const m = Math.min(dS, dE);
+                    if (m < beDist) { beDist = m; beIdx = i; beRev = dE < dS; }
+                }
+                if (beIdx >= 0 && beDist <= SNAP_SQ) {
+                    const seg = segs[beIdx];
+                    const coords = beRev ? [...seg.coords].reverse() : seg.coords;
+                    const skip = (distSq(chain[chain.length - 1], coords[0]) < SNAP_SQ) ? 1 : 0;
+                    for (let j = skip; j < coords.length; j++) chain.push(coords[j]);
+                    seg.used = true;
+                    extended = true;
+                    continue;
+                }
             }
 
-            // Best match to extend from chain START
-            let bsIdx = -1, bsDist = Infinity, bsRev = false;
-            for (let i = 0; i < segs.length; i++) {
-                if (segs[i].used) continue;
-                const dE = distSq(chainStart, segs[i].end);
-                const dS = distSq(chainStart, segs[i].start);
-                const m = Math.min(dE, dS);
-                if (m < bsDist) { bsDist = m; bsIdx = i; bsRev = dS < dE; }
-            }
-
-            // Extend the closer end (within snap tolerance only)
-            if (beIdx >= 0 && beDist <= SNAP_SQ && (beDist <= bsDist || bsDist > SNAP_SQ)) {
-                const seg = segs[beIdx];
-                const coords = beRev ? [...seg.coords].reverse() : seg.coords;
-                const skip = (distSq(chain[chain.length - 1], coords[0]) < SNAP_SQ) ? 1 : 0;
-                for (let j = skip; j < coords.length; j++) chain.push(coords[j]);
-                seg.used = true;
-                extended = true;
-            } else if (bsIdx >= 0 && bsDist <= SNAP_SQ) {
-                const seg = segs[bsIdx];
-                const coords = bsRev ? [...seg.coords].reverse() : seg.coords;
-                const trim = (distSq(chain[0], coords[coords.length - 1]) < SNAP_SQ) ? 1 : 0;
-                chain = [...coords.slice(0, coords.length - trim), ...chain];
-                seg.used = true;
-                extended = true;
+            // Check if chain START is at a branching junction (degree > 2)
+            const startDeg = junctionDegree(chainStart);
+            if (startDeg <= 2) {
+                let bsIdx = -1, bsDist = Infinity, bsRev = false;
+                for (let i = 0; i < segs.length; i++) {
+                    if (segs[i].used) continue;
+                    const dE = distSq(chainStart, segs[i].end);
+                    const dS = distSq(chainStart, segs[i].start);
+                    const m = Math.min(dE, dS);
+                    if (m < bsDist) { bsDist = m; bsIdx = i; bsRev = dS < dE; }
+                }
+                if (bsIdx >= 0 && bsDist <= SNAP_SQ) {
+                    const seg = segs[bsIdx];
+                    const coords = bsRev ? [...seg.coords].reverse() : seg.coords;
+                    const trim = (distSq(chain[0], coords[coords.length - 1]) < SNAP_SQ) ? 1 : 0;
+                    chain = [...coords.slice(0, coords.length - trim), ...chain];
+                    seg.used = true;
+                    extended = true;
+                }
             }
         }
 
         chains.push({ name: chainName, coords: chain, color: chainColor, width: chainWidth, opacity: chainOpacity });
     }
 
-    console.log('[CHAIN] ' + segments.length + ' segments -> ' + chains.length + ' chains (' +
+    console.log('[CHAIN] ' + segments.length + ' segs, dedup=' + dedupRemoved +
+        ', unique=' + unique.length + ' -> ' + chains.length + ' chains (' +
         chains.reduce((s, c) => s + c.coords.length, 0) + ' pts)');
     return chains;
 }
@@ -3690,8 +3744,11 @@ window.exportSimplifiedGeoJSON = function() {
     const gj = { type: 'FeatureCollection', features };
     // Compact JSON — no pretty printing
     const jsonStr = JSON.stringify(gj);
-    const name = 'Simplified_GeoJSON_' + getProjectName() + '.geojson';
-    downloadFile(jsonStr, name, 'application/geo+json');
+    const defaultName = 'Simplified_GeoJSON_' + getProjectName() + '.geojson';
+    const name = prompt('Export filename:', defaultName);
+    if (!name) return; // cancelled
+    const finalName = name.endsWith('.geojson') ? name : name + '.geojson';
+    downloadFile(jsonStr, finalName, 'application/geo+json');
 
     const reduction = totalPts > 0 ? Math.round((1 - totalSimplified / totalPts) * 100) : 0;
     toast(`Exported ${chained.length} chains (from ${lines.length} segments): ${totalPts} → ${totalSimplified} pts (${reduction}% reduction)`, 'success');
