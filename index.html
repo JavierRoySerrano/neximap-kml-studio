@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<!-- NexiMap KML Studio v3.0.8 - Dedup + editable export name in simplified GeoJSON export -->
+<!-- NexiMap KML Studio v4.0.0 - Unified open dialog, Undo/Redo, Eraser tool -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NexiMap KML Studio v3.0.8</title>
+<title>NexiMap KML Studio v4.0.0</title>
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='2' y='2' width='28' height='28' rx='4' fill='%230096D6'/%3E%3Cpath d='M8 12L16 8L24 12L16 16Z' fill='white' opacity='0.9'/%3E%3Cpath d='M8 16L16 20L24 16' stroke='white' stroke-width='1.5' fill='none'/%3E%3Cpath d='M8 20L16 24L24 20' stroke='white' stroke-width='1.5' fill='none'/%3E%3C/svg%3E"/>
 <style>
 :root {
@@ -577,6 +577,34 @@ header {
 .leaflet-container.measure-cursor { cursor: crosshair !important; }
 .leaflet-container.measure-cursor .leaflet-interactive { cursor: crosshair !important; }
 
+/* Eraser mode */
+.leaflet-container.eraser-cursor { cursor: none !important; }
+.leaflet-container.eraser-cursor .leaflet-interactive { cursor: none !important; }
+#eraserBrush {
+    position: fixed; pointer-events: none; z-index: 9000;
+    border: 2px solid rgba(239,68,68,0.8); border-radius: 50%;
+    background: rgba(239,68,68,0.12);
+    display: none; transform: translate(-50%, -50%);
+}
+#eraserBrush.active { display: block; }
+#eraserBrush.erasing { background: rgba(239,68,68,0.25); border-color: #ef4444; }
+#eraserSizeSlider {
+    position: absolute; bottom: 60px; left: 50%; transform: translateX(-50%);
+    z-index: 900; background: white; border: 1px solid var(--border);
+    border-radius: 8px; box-shadow: var(--shadow); padding: 8px 14px;
+    display: none; align-items: center; gap: 8px; font-size: 11px; color: var(--text-secondary);
+}
+#eraserSizeSlider.show { display: flex; }
+#eraserSizeSlider input[type="range"] {
+    -webkit-appearance: none; width: 120px; height: 4px;
+    background: #ddd; border-radius: 2px; outline: none;
+}
+#eraserSizeSlider input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 14px; height: 14px;
+    background: var(--danger); border-radius: 50%; cursor: pointer;
+    border: 2px solid white; box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
 /* Vertex dots overlay (non-edit, for visual reference) */
 .vertex-dot {
     width: 8px; height: 8px; border-radius: 50%;
@@ -1038,7 +1066,7 @@ header {
     <div class="app-logo">
         <svg width="20" height="20" viewBox="0 0 32 32"><rect x="2" y="2" width="28" height="28" rx="4" fill="#0096D6"/><path d="M8 12L16 8L24 12L16 16Z" fill="white" opacity="0.9"/><path d="M8 16L16 20L24 16" stroke="white" stroke-width="1.5" fill="none"/><path d="M8 20L16 24L24 20" stroke="white" stroke-width="1.5" fill="none"/></svg>
         NexiMap KML Studio
-        <span class="ver">v3.0.8</span>
+        <span class="ver">v4.0.0</span>
     </div>
 
     <!-- File Menu -->
@@ -1073,6 +1101,9 @@ header {
     </button>
     <button class="tool-btn" id="btnRuler" onclick="toggleRulerMode()" title="Ruler: draw a polyline to measure distance">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21L21 3"/><path d="M6 18l2-2"/><path d="M9 15l2-2"/><path d="M12 12l2-2"/><path d="M15 9l2-2"/><circle cx="3" cy="21" r="1.5" fill="currentColor"/><circle cx="21" cy="3" r="1.5" fill="currentColor"/></svg>
+    </button>
+    <button class="tool-btn" id="btnEraser" onclick="toggleEraserMode()" title="Eraser: drag across map to delete features">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 20H7L3 16c-.8-.8-.8-2 0-2.8l10-10c.8-.8 2-.8 2.8 0l5.6 5.6c.8.8.8 2 0 2.8L16 17"/><path d="M6 11l7 7"/></svg>
     </button>
 
     <div class="tool-sep"></div>
@@ -1160,6 +1191,12 @@ header {
     <div id="mapContainer">
         <div id="map"></div>
         <div id="editBanner">✏️ EDIT MODE — Drag vertices to reposition • Right-click vertex to delete</div>
+        <div id="eraserBrush"></div>
+        <div id="eraserSizeSlider">
+            <span>🧹</span>
+            <input type="range" id="eraserSizeRange" min="20" max="200" value="60" oninput="updateEraserSize(this.value)">
+            <span id="eraserSizeLabel">60px</span>
+        </div>
         <div id="mapLayerSelector">
             <div class="map-layer-header" id="mapLayerDragHandle">
                 <span>Map Type</span>
@@ -1180,7 +1217,7 @@ header {
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                 <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>
             </svg>
-            <p>Open a KML or GeoJSON file to begin<br><span class="hint">Use File menu or drag &amp; drop onto the map</span></p>
+            <p>Open a KML, KMZ, or GeoJSON file to begin<br><span class="hint">Use File &gt; Open or drag &amp; drop onto the map</span></p>
         </div>
         <div id="logoOverlay">
             <img id="logoImage" src="" alt="Logo">
@@ -1427,15 +1464,12 @@ header {
 
 <!-- Menu dropdowns (body-level for z-index above Leaflet) -->
 <div class="menu-dropdown" id="fileMenu">
-    <button class="menu-dropdown-item" onclick="openKMLFile(); closeMenus();">
-        📂 Open KML/KMZ… <span class="shortcut">Ctrl+O</span>
-    </button>
-    <button class="menu-dropdown-item" onclick="openGeoJSONFile(); closeMenus();">
-        📂 Open GeoJSON…
+    <button class="menu-dropdown-item" onclick="openFile(); closeMenus();">
+        📂 Open… <span class="shortcut">Ctrl+O</span>
     </button>
     <div class="menu-sep"></div>
     <button class="menu-dropdown-item" onclick="openMergeFiles(); closeMenus();">
-        📑 Merge KML/KMZ files…
+        📑 Merge files…
     </button>
     <div class="menu-sep"></div>
     <button class="menu-dropdown-item" onclick="fileSave(); closeMenus();">
@@ -1464,6 +1498,13 @@ header {
     </button>
 </div>
 <div class="menu-dropdown" id="editMenu">
+    <button class="menu-dropdown-item" onclick="undo(); closeMenus();">
+        ↩️ Undo <span class="shortcut">Ctrl+Z</span>
+    </button>
+    <button class="menu-dropdown-item" onclick="redo(); closeMenus();">
+        ↪️ Redo <span class="shortcut">Ctrl+Shift+Z</span>
+    </button>
+    <div class="menu-sep"></div>
     <button class="menu-dropdown-item" onclick="createNewFolder(); closeMenus();">
         📁 New Folder
     </button>
@@ -1475,6 +1516,9 @@ header {
     </button>
     <button class="menu-dropdown-item" onclick="toggleRulerMode(); closeMenus();">
         📏 Ruler Tool
+    </button>
+    <button class="menu-dropdown-item" onclick="toggleEraserMode(); closeMenus();">
+        🧹 Eraser Tool
     </button>
     <div class="menu-sep"></div>
     <button class="menu-dropdown-item" onclick="toggleEditMode(); closeMenus();">
@@ -1529,9 +1573,8 @@ header {
     </button>
 </div>
 
-<input type="file" id="fileInput" accept=".kml,.kmz" onchange="handleFileOpen(event)">
-<input type="file" id="mergeFileInput" accept=".kml,.kmz" multiple onchange="handleMergeFiles(event)">
-<input type="file" id="geojsonInput" accept=".geojson,.json" onchange="handleGeoJSONOpen(event)">
+<input type="file" id="fileInput" accept=".kml,.kmz,.geojson,.json" onchange="handleFileOpen(event)">
+<input type="file" id="mergeFileInput" accept=".kml,.kmz,.geojson,.json" multiple onchange="handleMergeFiles(event)">
 <input type="file" id="logoInput" accept="image/*" onchange="handleLogoUpload(event)">
 
 <!-- Color palette popup -->
@@ -1666,6 +1709,71 @@ let editMode = false;
 let addPointMode = false;
 let ctxTargetId = null;
 
+// === UNDO / REDO SYSTEM ===
+const undoStack = [];
+const redoStack = [];
+const MAX_UNDO = 80;
+
+function takeSnapshot() {
+    // Deep-clone projectData (without Leaflet objects)
+    const snap = { folders: JSON.parse(JSON.stringify(projectData.folders)), layers: {} };
+    for (const [id, l] of Object.entries(projectData.layers)) {
+        snap.layers[id] = {
+            id: l.id, name: l.name, type: l.type,
+            coords: JSON.parse(JSON.stringify(l.coords)),
+            originalCoords: JSON.parse(JSON.stringify(l.originalCoords)),
+            color: l.color, width: l.width, opacity: l.opacity,
+            visible: l.visible, checked: l.checked, folderId: l.folderId,
+            pinType: l.pinType, description: l.description, showLabel: l.showLabel
+        };
+    }
+    snap.nextId = nextId;
+    return snap;
+}
+
+function restoreSnapshot(snap) {
+    // Remove existing Leaflet layers
+    Object.values(projectData.layers).forEach(l => {
+        if (l.leafletLayer) map.removeLayer(l.leafletLayer);
+        l.vertexMarkers.forEach(m => map.removeLayer(m));
+    });
+    // Restore data
+    projectData.folders = JSON.parse(JSON.stringify(snap.folders));
+    projectData.layers = {};
+    for (const [id, l] of Object.entries(snap.layers)) {
+        projectData.layers[id] = {
+            ...JSON.parse(JSON.stringify(l)),
+            leafletLayer: null, vertexMarkers: []
+        };
+    }
+    nextId = snap.nextId;
+    // Clear selection if the layer no longer exists
+    if (selectedLayerId && !projectData.layers[selectedLayerId]) selectedLayerId = null;
+    selectedLayerIds = new Set([...selectedLayerIds].filter(id => projectData.layers[id]));
+    if (selectedFolderId && !projectData.folders.find(f => f.id === selectedFolderId)) selectedFolderId = null;
+    renderAll(); updatePropsPanel(); updateStatus();
+}
+
+function pushUndo() {
+    undoStack.push(takeSnapshot());
+    if (undoStack.length > MAX_UNDO) undoStack.shift();
+    redoStack.length = 0; // clear redo on new action
+}
+
+window.undo = function() {
+    if (undoStack.length === 0) { toast('Nothing to undo', 'info'); return; }
+    redoStack.push(takeSnapshot());
+    restoreSnapshot(undoStack.pop());
+    toast('Undo', 'info');
+};
+
+window.redo = function() {
+    if (redoStack.length === 0) { toast('Nothing to redo', 'info'); return; }
+    undoStack.push(takeSnapshot());
+    restoreSnapshot(redoStack.pop());
+    toast('Redo', 'info');
+};
+
 // === MAP ===
 const map = L.map('map', { center: [20, 0], zoom: 3, zoomControl: true, attributionControl: true });
 
@@ -1714,9 +1822,26 @@ window.switchMapLayer = function(key) {
 };
 
 // === FILE I/O ===
-window.openKMLFile = () => document.getElementById('fileInput').click();
+window.openFile = () => document.getElementById('fileInput').click();
+window.openKMLFile = () => document.getElementById('fileInput').click(); // legacy alias
 window.openMergeFiles = () => document.getElementById('mergeFileInput').click();
-window.openGeoJSONFile = () => document.getElementById('geojsonInput').click();
+window.openGeoJSONFile = () => document.getElementById('fileInput').click(); // legacy alias
+
+// Detect file type and import accordingly
+async function importFileByType(file) {
+    const fname = file.name.toLowerCase();
+    if (fname.endsWith('.kmz')) {
+        const kmlStr = await extractKMLFromKMZ(file);
+        importKML(kmlStr, file.name);
+    } else if (fname.endsWith('.geojson') || fname.endsWith('.json')) {
+        const text = await readFileAsText(file);
+        importGeoJSON(text, file.name);
+    } else {
+        // Default: treat as KML
+        const text = await readFileAsText(file);
+        importKML(text, file.name);
+    }
+}
 
 window.handleFileOpen = async function(e) {
     const file = e.target.files[0];
@@ -1725,19 +1850,11 @@ window.handleFileOpen = async function(e) {
     currentFileHandle = null;
     currentFileIsKMZ = file.name.toLowerCase().endsWith('.kmz');
 
-    if (currentFileIsKMZ) {
-        try {
-            const kmlStr = await extractKMLFromKMZ(file);
-            importKML(kmlStr, file.name);
-            toast('Opened KMZ: ' + file.name, 'success');
-        } catch (err) { toast('Error opening KMZ: ' + err.message, 'error'); }
-    } else {
-        const reader = new FileReader();
-        reader.onload = (ev) => {
-            try { importKML(ev.target.result, file.name); toast('Opened ' + file.name, 'success'); }
-            catch (err) { toast('Error: ' + err.message, 'error'); }
-        };
-        reader.readAsText(file);
+    try {
+        await importFileByType(file);
+        toast('Opened ' + file.name, 'success');
+    } catch (err) {
+        toast('Error opening file: ' + err.message, 'error');
     }
     e.target.value = '';
 };
@@ -1748,13 +1865,7 @@ window.handleMergeFiles = async function(e) {
     let loaded = 0;
     for (const file of files) {
         try {
-            let kmlStr;
-            if (file.name.toLowerCase().endsWith('.kmz')) {
-                kmlStr = await extractKMLFromKMZ(file);
-            } else {
-                kmlStr = await readFileAsText(file);
-            }
-            importKML(kmlStr, file.name);
+            await importFileByType(file);
         } catch (err) { toast('Error in ' + file.name + ': ' + err.message, 'error'); }
         loaded++;
     }
@@ -1784,33 +1895,22 @@ window.handleGeoJSONOpen = function(e) {
     e.target.value = '';
 };
 
-// Drag-and-drop
+// Drag-and-drop (supports KML, KMZ, GeoJSON, JSON)
 const mapContainer = document.getElementById('mapContainer');
 mapContainer.addEventListener('dragover', (e) => { e.preventDefault(); });
 mapContainer.addEventListener('drop', async (e) => {
     e.preventDefault();
     for (const file of Array.from(e.dataTransfer.files)) {
         try {
-            const fname = file.name.toLowerCase();
-            if (fname.endsWith('.kmz')) {
-                const kmlStr = await extractKMLFromKMZ(file);
-                importKML(kmlStr, file.name);
-                toast('Loaded KMZ: ' + file.name, 'success');
-            } else if (fname.endsWith('.geojson') || fname.endsWith('.json')) {
-                const txt = await readFileAsText(file);
-                importGeoJSON(txt, file.name);
-                toast('Loaded ' + file.name, 'success');
-            } else if (fname.endsWith('.kml')) {
-                const txt = await readFileAsText(file);
-                importKML(txt, file.name);
-                toast('Loaded ' + file.name, 'success');
-            }
+            await importFileByType(file);
+            toast('Loaded ' + file.name, 'success');
         } catch (err) { toast('Error: ' + err.message, 'error'); }
     }
 });
 
 // === KML PARSER (robust) ===
 function importKML(kmlStr, fileName) {
+    pushUndo();
     // Strip any non-XML content before the actual KML (e.g. email headers)
     const kmlStart = kmlStr.indexOf('<?xml');
     if (kmlStart > 0) kmlStr = kmlStr.substring(kmlStart);
@@ -2099,6 +2199,7 @@ function getKmlText(parent, tag) {
 
 // === GEOJSON PARSER ===
 function importGeoJSON(jsonStr, fileName) {
+    pushUndo();
     const data = JSON.parse(jsonStr);
     const folderId = genFolderId();
     const folder = { id: folderId, name: fileName.replace(/\.(geojson|json)$/i, ''), expanded: true, items: [] };
@@ -2321,7 +2422,7 @@ function renderVertexDots() {
         });
 
         if (canDrag) {
-            marker.on('dragstart', () => { map.dragging.disable(); });
+            marker.on('dragstart', () => { pushUndo(); map.dragging.disable(); });
             marker.on('drag', (e) => {
                 const ll = e.target.getLatLng();
                 layer.coords[idx] = [ll.lat, ll.lng];
@@ -2397,6 +2498,7 @@ function renderVertexMarkers(layer) {
         // Prevent map drag when dragging marker
         marker.on('mousedown', () => { map.dragging.disable(); });
         marker.on('dragstart', () => {
+            pushUndo();
             map.dragging.disable();
             if (marker.getElement()) marker.getElement().classList.add('dragging');
         });
@@ -2416,6 +2518,7 @@ function renderVertexMarkers(layer) {
             L.DomEvent.stopPropagation(e);
             L.DomEvent.preventDefault(e);
             if (layer.coords.length > 2) {
+                pushUndo();
                 layer.coords.splice(idx, 1);
                 renderMapLayers();
                 updatePropsPanel();
@@ -2884,6 +2987,7 @@ function updatePropsPanel() {
 // === PROPERTY UPDATES ===
 window.updateSelectedName = (v) => { const l = projectData.layers[selectedLayerId]; if (l) { l.name = v; renderFolderTree(); } };
 window.updateSelectedColor = (v) => {
+    pushUndo();
     // Apply to ALL selected layers (multi-select aware)
     selectedLayerIds.forEach(id => {
         const l = projectData.layers[id];
@@ -2897,6 +3001,7 @@ window.updateSelectedColor = (v) => {
     });
 };
 window.updateSelectedWidth = (v) => {
+    pushUndo();
     const w = parseFloat(v);
     selectedLayerIds.forEach(id => {
         const l = projectData.layers[id];
@@ -2951,6 +3056,7 @@ window.previewSimplify = function(tol) {
 window.applySimplify = function() {
     const l = projectData.layers[selectedLayerId];
     if (!l || l.type !== 'line') return;
+    pushUndo();
     const tol = parseFloat(document.getElementById('propTolerance').value);
     l.coords = douglasPeucker(l.coords, tol);
     renderAll(); updatePropsPanel();
@@ -2959,13 +3065,14 @@ window.applySimplify = function() {
 
 window.undoSimplify = function() {
     const l = projectData.layers[selectedLayerId]; if (!l) return;
+    pushUndo();
     l.coords = JSON.parse(JSON.stringify(l.originalCoords));
     renderAll(); updatePropsPanel();
     toast('Restored original coordinates', 'info');
 };
 
 // =========================================================================
-// SEGMENT CHAINING FOR SIMPLIFIED EXPORT (v3.0.8)
+// SEGMENT CHAINING FOR SIMPLIFIED EXPORT (v4.0.0)
 // =========================================================================
 // 1. Deduplicates exact-copy geometries (common when KMZ has repeated folders)
 // 2. Builds endpoint degree map to detect branching junctions
@@ -3129,6 +3236,7 @@ function chainSimplifiedSegments(segments) {
 // === EDIT MODE ===
 window.toggleEditMode = function() {
     // Deactivate other modes
+    if (eraserMode) { eraserMode = false; document.getElementById('btnEraser').classList.remove('active'); document.getElementById('eraserSizeSlider').classList.remove('show'); document.getElementById('eraserBrush').classList.remove('active'); const lcE = document.querySelector('.leaflet-container'); if (lcE) lcE.classList.remove('eraser-cursor'); map.dragging.enable(); }
     if (measureMode) {
         measureMode = false; measureClicks = []; measureClickData = []; clearMeasureMarkers();
         document.getElementById('btnMeasurePath').classList.remove('active');
@@ -3214,6 +3322,7 @@ function finishDraw() {
     if (drawPreviewLayer) { map.removeLayer(drawPreviewLayer); drawPreviewLayer = null; }
     drawDotMarkers.forEach(m => map.removeLayer(m)); drawDotMarkers = [];
     if (drawCoords.length >= 2) {
+        pushUndo();
         // Create new layer
         const name = prompt('Name for new line:', 'New Line') || 'New Line';
         const id = genId();
@@ -3264,6 +3373,7 @@ map.on('click', (e) => {
     }
     // Pin mode (uses selected pin type - Enhancement 7)
     if (pinMode) {
+        pushUndo();
         const name = prompt('Pin name:', 'Location') || 'Location';
         const id = genId();
         const coords = [[e.latlng.lat, e.latlng.lng]];
@@ -3437,6 +3547,7 @@ window.ctxMoveToFolder = function() {
 window.ctxDelete = function() {
     if (ctxTargetFolderId) {
         if (confirm('Delete this folder and all its layers?')) {
+            pushUndo();
             deleteFolderRecursive(ctxTargetFolderId);
             renderAll(); updatePropsPanel(); updateStatus();
             toast('Folder deleted', 'info');
@@ -3532,6 +3643,7 @@ window.deleteSelected = () => deleteLayer(selectedLayerId);
 
 function deleteLayer(id) {
     const l = projectData.layers[id]; if (!l) return;
+    pushUndo();
     if (l.leafletLayer) map.removeLayer(l.leafletLayer);
     l.vertexMarkers.forEach(m => map.removeLayer(m));
     delete projectData.layers[id];
@@ -3542,6 +3654,7 @@ function deleteLayer(id) {
 
 window.clearProject = function() {
     if (!confirm('Clear all layers and folders?')) return;
+    pushUndo();
     Object.values(projectData.layers).forEach(l => {
         if (l.leafletLayer) map.removeLayer(l.leafletLayer);
         l.vertexMarkers.forEach(m => map.removeLayer(m));
@@ -3853,6 +3966,149 @@ window.fileSaveAsGeoJSON = function() {
     toast('Saved as GeoJSON: ' + name, 'success');
 };
 
+// === ERASER MODE ===
+let eraserMode = false;
+let eraserSize = 60;
+let eraserDragging = false;
+let eraserDeletedIds = new Set();
+
+window.toggleEraserMode = function() {
+    eraserMode = !eraserMode;
+    // Deactivate other modes
+    if (eraserMode) {
+        if (editMode) toggleEditMode();
+        if (addPointMode) toggleAddPointMode();
+        if (drawMode) { drawCoords = []; if (drawPreviewLayer) { map.removeLayer(drawPreviewLayer); drawPreviewLayer = null; } drawDotMarkers.forEach(m => map.removeLayer(m)); drawDotMarkers = []; drawMode = false; document.getElementById('btnDrawLine').classList.remove('active'); }
+        if (pinMode) { pinMode = false; document.getElementById('btnPlacePin').classList.remove('active'); }
+        if (measureMode) { measureMode = false; measureClicks = []; measureClickData = []; clearMeasureMarkers(); document.getElementById('btnMeasurePath').classList.remove('active'); }
+        if (rulerMode) { deactivateRuler(); }
+    }
+    document.getElementById('btnEraser').classList.toggle('active', eraserMode);
+    const lc = document.querySelector('.leaflet-container');
+    if (eraserMode) {
+        document.getElementById('editBanner').textContent = '🧹 ERASER MODE — Drag across features to delete them. Scroll to resize brush.';
+        document.getElementById('editBanner').classList.add('show');
+        document.getElementById('eraserSizeSlider').classList.add('show');
+        document.getElementById('eraserBrush').classList.add('active');
+        if (lc) lc.classList.add('eraser-cursor');
+        map.dragging.disable();
+    } else {
+        if (!editMode && !addPointMode && !drawMode && !pinMode) document.getElementById('editBanner').classList.remove('show');
+        document.getElementById('eraserSizeSlider').classList.remove('show');
+        document.getElementById('eraserBrush').classList.remove('active');
+        if (lc) lc.classList.remove('eraser-cursor');
+        map.dragging.enable();
+    }
+    toast(eraserMode ? 'Eraser ON — drag to delete features' : 'Eraser OFF', 'info');
+};
+
+window.updateEraserSize = function(v) {
+    eraserSize = parseInt(v);
+    document.getElementById('eraserSizeLabel').textContent = v + 'px';
+    const brush = document.getElementById('eraserBrush');
+    brush.style.width = eraserSize + 'px';
+    brush.style.height = eraserSize + 'px';
+};
+
+// Track mouse for eraser brush visual
+document.addEventListener('mousemove', (e) => {
+    if (!eraserMode) return;
+    const brush = document.getElementById('eraserBrush');
+    brush.style.left = e.clientX + 'px';
+    brush.style.top = e.clientY + 'px';
+    brush.style.width = eraserSize + 'px';
+    brush.style.height = eraserSize + 'px';
+
+    if (eraserDragging) {
+        eraseAtPoint(e.clientX, e.clientY);
+    }
+});
+
+// Scroll to resize eraser brush
+document.getElementById('mapContainer').addEventListener('wheel', (e) => {
+    if (!eraserMode) return;
+    e.preventDefault();
+    eraserSize = Math.max(20, Math.min(200, eraserSize + (e.deltaY > 0 ? -10 : 10)));
+    document.getElementById('eraserSizeRange').value = eraserSize;
+    document.getElementById('eraserSizeLabel').textContent = eraserSize + 'px';
+    const brush = document.getElementById('eraserBrush');
+    brush.style.width = eraserSize + 'px';
+    brush.style.height = eraserSize + 'px';
+}, { passive: false });
+
+document.getElementById('mapContainer').addEventListener('mousedown', (e) => {
+    if (!eraserMode || e.button !== 0) return;
+    eraserDragging = true;
+    eraserDeletedIds = new Set();
+    pushUndo();
+    document.getElementById('eraserBrush').classList.add('erasing');
+    eraseAtPoint(e.clientX, e.clientY);
+});
+
+document.addEventListener('mouseup', () => {
+    if (eraserDragging) {
+        eraserDragging = false;
+        document.getElementById('eraserBrush').classList.remove('erasing');
+        if (eraserDeletedIds.size > 0) {
+            renderAll(); updatePropsPanel(); updateStatus();
+            toast('Erased ' + eraserDeletedIds.size + ' feature(s)', 'info');
+        } else {
+            // No features erased — pop the undo snapshot we pushed
+            undoStack.pop();
+        }
+        eraserDeletedIds = new Set();
+    }
+});
+
+function eraseAtPoint(clientX, clientY) {
+    const radius = eraserSize / 2;
+    // Check each visible layer for proximity to the eraser brush center
+    const toDelete = [];
+    Object.values(projectData.layers).forEach(layer => {
+        if (!layer.visible || !layer.leafletLayer) return;
+        if (eraserDeletedIds.has(layer.id)) return;
+
+        if (layer.type === 'line' && layer.coords.length > 0) {
+            // Check if any segment of the polyline passes through the brush
+            for (let i = 0; i < layer.coords.length; i++) {
+                const pt = map.latLngToContainerPoint(L.latLng(layer.coords[i][0], layer.coords[i][1]));
+                const mapRect = document.getElementById('map').getBoundingClientRect();
+                const screenX = pt.x + mapRect.left;
+                const screenY = pt.y + mapRect.top;
+                const dx = screenX - clientX;
+                const dy = screenY - clientY;
+                if (Math.sqrt(dx*dx + dy*dy) <= radius) {
+                    toDelete.push(layer.id);
+                    break;
+                }
+            }
+        } else if (layer.type === 'point' && layer.coords.length > 0) {
+            const pt = map.latLngToContainerPoint(L.latLng(layer.coords[0][0], layer.coords[0][1]));
+            const mapRect = document.getElementById('map').getBoundingClientRect();
+            const screenX = pt.x + mapRect.left;
+            const screenY = pt.y + mapRect.top;
+            const dx = screenX - clientX;
+            const dy = screenY - clientY;
+            if (Math.sqrt(dx*dx + dy*dy) <= radius) {
+                toDelete.push(layer.id);
+            }
+        }
+    });
+
+    toDelete.forEach(id => {
+        eraserDeletedIds.add(id);
+        const l = projectData.layers[id];
+        if (l) {
+            if (l.leafletLayer) map.removeLayer(l.leafletLayer);
+            l.vertexMarkers.forEach(m => map.removeLayer(m));
+            delete projectData.layers[id];
+            projectData.folders.forEach(f => { f.items = f.items.filter(i => i !== id); });
+            if (selectedLayerId === id) selectedLayerId = null;
+            selectedLayerIds.delete(id);
+        }
+    });
+}
+
 // === MENUS ===
 window.toggleMenu = function(id, btn) {
     const m = document.getElementById(id);
@@ -4099,6 +4355,7 @@ window.toggleLogoSettings = function() {
 window.batchSimplifyAll = function() {
     const target = prompt('Target total points across all lines (default 300):', '300');
     if (!target) return;
+    pushUndo();
     const TARGET = parseInt(target);
     const lines = Object.values(projectData.layers).filter(l => l.type === 'line');
     const totalBefore = lines.reduce((s, l) => s + l.coords.length, 0);
@@ -4140,12 +4397,16 @@ window.showProjectStats = function() {
 
 // === ENHANCED GEOJSON EXPORT/IMPORT (with pins) ===
 document.addEventListener('keydown', (e) => {
-    if (e.ctrlKey && e.key === 'o') { e.preventDefault(); openKMLFile(); }
+    if (e.ctrlKey && e.key === 'o') { e.preventDefault(); openFile(); }
+    if (e.ctrlKey && e.shiftKey && e.key === 'Z') { e.preventDefault(); redo(); return; }
+    if (e.ctrlKey && e.key === 'z') { e.preventDefault(); undo(); return; }
+    if (e.ctrlKey && e.key === 'y') { e.preventDefault(); redo(); return; }
     if (e.ctrlKey && e.shiftKey && e.key === 'S') { e.preventDefault(); fileSaveAs(); }
     else if (e.ctrlKey && e.key === 's') { e.preventDefault(); fileSave(); }
     if (e.key === 'Delete' && selectedLayerId) { deleteSelected(); }
     if (e.key === 'Escape') {
-        if (rulerMode) { deactivateRuler(); }
+        if (eraserMode) { toggleEraserMode(); }
+        else if (rulerMode) { deactivateRuler(); }
         else if (measureMode) { measureMode = false; measureClicks = []; measureClickData = []; clearMeasureMarkers(); document.getElementById('btnMeasurePath').classList.remove('active'); if (!editMode) document.getElementById('editBanner').classList.remove('show'); const lcm = document.querySelector('.leaflet-container'); if (lcm) lcm.classList.remove('measure-cursor'); map.doubleClickZoom.enable(); renderVertexDots(); toast('Measure cancelled', 'info'); }
         else if (pinMode) { pinMode = false; document.getElementById('btnPlacePin').classList.remove('active'); document.getElementById('editBanner').classList.remove('show'); const lc2 = document.querySelector('.leaflet-container'); if (lc2) lc2.classList.remove('pin-cursor'); map.doubleClickZoom.enable(); toast('Pin mode cancelled', 'info'); }
         else if (drawMode) { drawCoords = []; if (drawPreviewLayer) { map.removeLayer(drawPreviewLayer); drawPreviewLayer = null; } drawDotMarkers.forEach(m => map.removeLayer(m)); drawDotMarkers = []; drawMode = false; document.getElementById('btnDrawLine').classList.remove('active'); document.getElementById('editBanner').classList.remove('show'); const lcD = document.querySelector('.leaflet-container'); if (lcD) lcD.classList.remove('draw-cursor'); renderVertexDots(); toast('Draw cancelled', 'info'); }
@@ -4424,6 +4685,7 @@ window.zoomToMultiSelected = function() {
 window.deleteMultiSelected = function() {
     if (selectedLayerIds.size === 0) return;
     if (!confirm('Delete ' + selectedLayerIds.size + ' selected layer(s)?')) return;
+    pushUndo();
     selectedLayerIds.forEach(id => {
         const l = projectData.layers[id];
         if (l) {
@@ -5019,6 +5281,7 @@ function createPinFromSearch(r) {
 }
 
 window.createPinAtCoords = function(lat, lng, name) {
+    pushUndo();
     const id = genId();
     const coords = [[lat, lng]];
     let folderId;
@@ -5336,6 +5599,7 @@ window.ctxJoinSegments = function() {
 
 // Main join function — works with selectedLayerIds
 window.joinSelectedSegments = function() {
+    pushUndo();
     // Collect all selected line layers
     const lines = [];
     for (const id of selectedLayerIds) {
