@@ -5066,13 +5066,23 @@ map.on('mousemove', (e) => {
 // === KMZ SUPPORT (v2.2) ===
 let currentFileIsKMZ = false;
 
-// Extract KML text from a KMZ file (which is a ZIP containing doc.kml or *.kml)
+// Extract KML text from a KMZ file recursively (handles nested KMZs)
 async function extractKMLFromKMZ(file) {
     if (typeof JSZip === 'undefined') {
         throw new Error('JSZip library not loaded. Check your internet connection and reload.');
     }
     const buf = await file.arrayBuffer();
     const zip = await JSZip.loadAsync(buf);
+    // Collect KML strings from this archive and any nested KMZs
+    const kmlStrings = [];
+    // Process nested .kmz files recursively
+    const nestedKmzFiles = zip.file(/\.kmz$/i);
+    for (const nestedKmz of nestedKmzFiles) {
+        const nestedBuf = await nestedKmz.async('arraybuffer');
+        const nestedFile = new File([nestedBuf], nestedKmz.name);
+        const nestedKml = await extractKMLFromKMZ(nestedFile);
+        if (nestedKml) kmlStrings.push(nestedKml);
+    }
     // Look for doc.kml first, then any .kml file
     let kmlFile = zip.file('doc.kml');
     if (!kmlFile) {
@@ -5080,8 +5090,16 @@ async function extractKMLFromKMZ(file) {
         const kmlFiles = zip.file(/\.kml$/i);
         if (kmlFiles.length > 0) kmlFile = kmlFiles[0];
     }
-    if (!kmlFile) throw new Error('No KML file found inside KMZ archive');
-    return await kmlFile.async('string');
+    if (kmlFile) kmlStrings.push(await kmlFile.async('string'));
+    if (kmlStrings.length === 0) throw new Error('No KML file found inside KMZ archive');
+    // If only one source, return it directly
+    if (kmlStrings.length === 1) return kmlStrings[0];
+    // Merge multiple KML documents into one
+    const merged = kmlStrings.map(k => {
+        const m = k.match(/<Document[^>]*>([\s\S]*)<\/Document>/i);
+        return m ? m[1] : k;
+    }).join('\n');
+    return `<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2"><Document>\n${merged}\n</Document></kml>`;
 }
 
 // Build a KMZ blob (ZIP containing doc.kml)
